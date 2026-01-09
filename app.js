@@ -14,9 +14,15 @@ const markdownArea = document.querySelector("#markdown-area");
 const exportMarkdownButton = document.querySelector("#export-markdown");
 const importMarkdownButton = document.querySelector("#import-markdown");
 const copyMarkdownButton = document.querySelector("#copy-markdown");
+const calendarDate = document.querySelector("#calendar-date");
+const clearDateFilterButton = document.querySelector("#clear-date-filter");
+const calendarList = document.querySelector("#calendar-list");
+const calendarSummary = document.querySelector("#calendar-summary");
+const calendarEmpty = document.querySelector("#calendar-empty");
 
 let tasks = loadTasks();
 let activeFilter = "all";
+let activeDate = "";
 
 function loadTasks() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -36,13 +42,14 @@ function saveTasks() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
 }
 
-function addTask({ title, notes, priority, tag }) {
+function addTask({ title, notes, priority, tag, dueDate }) {
   tasks.unshift({
     id: crypto.randomUUID(),
     title,
     notes,
     priority,
     tag,
+    dueDate,
     completed: false,
     createdAt: new Date().toISOString(),
   });
@@ -71,6 +78,7 @@ function clearCompleted() {
 function filterTasks(list) {
   const search = searchInput.value.trim().toLowerCase();
   return list.filter((task) => {
+    const matchesDate = !activeDate || task.dueDate === activeDate;
     const matchesSearch =
       !search ||
       [task.title, task.notes, task.tag]
@@ -80,7 +88,7 @@ function filterTasks(list) {
       activeFilter === "all" ||
       (activeFilter === "active" && !task.completed) ||
       (activeFilter === "completed" && task.completed);
-    return matchesSearch && matchesFilter;
+    return matchesDate && matchesSearch && matchesFilter;
   });
 }
 
@@ -120,7 +128,11 @@ function render() {
     tag.className = "badge";
     tag.textContent = task.tag ? `Tag: ${task.tag}` : "No tag";
 
-    meta.append(priority, tag);
+    const dueDate = document.createElement("span");
+    dueDate.className = "badge";
+    dueDate.textContent = task.dueDate ? `Due: ${task.dueDate}` : "No due date";
+
+    meta.append(priority, tag, dueDate);
     title.append(titleText, notesText, meta);
 
     const actions = document.createElement("div");
@@ -143,6 +155,7 @@ function render() {
   });
 
   taskCount.textContent = `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`;
+  renderCalendar();
 }
 
 function startEdit(task) {
@@ -153,12 +166,15 @@ function startEdit(task) {
   const newNotes = window.prompt("Update notes", task.notes || "") ?? task.notes;
   const newPriority = window.prompt("Update priority (low, medium, high)", task.priority) || task.priority;
   const newTag = window.prompt("Update tag", task.tag || "") ?? task.tag;
+  const newDueDate =
+    window.prompt("Update due date (YYYY-MM-DD)", task.dueDate || "") ?? task.dueDate;
 
   updateTask(task.id, {
     title: newTitle.trim(),
     notes: newNotes.trim(),
     priority: normalizePriority(newPriority),
     tag: newTag.trim(),
+    dueDate: newDueDate.trim(),
   });
 }
 
@@ -178,7 +194,12 @@ function exportMarkdown() {
       const checkbox = task.completed ? "- [x]" : "- [ ]";
       const notes = task.notes ? ` — ${task.notes}` : "";
       const tag = task.tag ? ` ${task.tag}` : "";
-      return `${checkbox} ${task.title}${notes}${tag} (priority: ${task.priority})`;
+      const metaParts = [`priority: ${task.priority}`];
+      if (task.dueDate) {
+        metaParts.push(`due: ${task.dueDate}`);
+      }
+      const metadata = ` (${metaParts.join(", ")})`;
+      return `${checkbox} ${task.title}${notes}${tag}${metadata}`;
     });
   markdownArea.value = lines.join("\n");
 }
@@ -193,16 +214,19 @@ function importMarkdown() {
     const completed = line.startsWith("- [x]") || line.startsWith("- [X]");
     const content = line.replace(/^\s*- \[[ xX]\]\s*/, "");
 
-    const priorityMatch = content.match(/\(priority: ([^)]+)\)/i);
-    const priority = priorityMatch ? normalizePriority(priorityMatch[1]) : "medium";
-    const contentWithoutPriority = priorityMatch
-      ? content.replace(priorityMatch[0], "").trim()
-      : content;
+    const metadataMatch = content.match(/\(([^)]+)\)$/);
+    const metadata = metadataMatch ? metadataMatch[1] : "";
+    const metadataParts = metadata.split(",").map((part) => part.trim());
+    const priorityPart = metadataParts.find((part) => part.toLowerCase().startsWith("priority:"));
+    const duePart = metadataParts.find((part) => part.toLowerCase().startsWith("due:"));
+    const priority = priorityPart ? normalizePriority(priorityPart.split(":")[1].trim()) : "medium";
+    const dueDate = duePart ? duePart.split(":")[1].trim() : "";
+    const contentWithoutMetadata = metadataMatch ? content.replace(metadataMatch[0], "").trim() : content;
 
-    const tagMatch = contentWithoutPriority.match(/#\w[\w-]*/);
+    const tagMatch = contentWithoutMetadata.match(/#\w[\w-]*/);
     const tag = tagMatch ? tagMatch[0] : "";
 
-    const [titlePart, notesPart] = contentWithoutPriority.split(" — ");
+    const [titlePart, notesPart] = contentWithoutMetadata.split(" — ");
     const title = (titlePart || "Untitled").replace(tag, "").trim();
     const notes = notesPart ? notesPart.trim() : "";
 
@@ -212,6 +236,7 @@ function importMarkdown() {
       notes,
       priority,
       tag,
+      dueDate,
       completed,
       createdAt: new Date().toISOString(),
     };
@@ -242,6 +267,44 @@ function handleFilterClick(event) {
   render();
 }
 
+function renderCalendar() {
+  const withDueDates = tasks
+    .filter((task) => task.dueDate)
+    .slice()
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+  calendarEmpty.style.display = withDueDates.length ? "none" : "block";
+  const upcoming = withDueDates.reduce((acc, task) => {
+    acc[task.dueDate] = acc[task.dueDate] || [];
+    acc[task.dueDate].push(task);
+    return acc;
+  }, {});
+
+  calendarList.innerHTML = "";
+
+  Object.entries(upcoming).forEach(([date, dateTasks]) => {
+    const item = document.createElement("li");
+    const title = document.createElement("span");
+    title.textContent = date;
+    const detail = document.createElement("small");
+    detail.textContent = `${dateTasks.length} task${dateTasks.length !== 1 ? "s" : ""}`;
+    item.append(title, detail);
+    item.addEventListener("click", () => {
+      activeDate = date;
+      calendarDate.value = date;
+      render();
+    });
+    calendarList.append(item);
+  });
+
+  if (!activeDate) {
+    calendarSummary.textContent = "No date selected.";
+  } else {
+    const count = tasks.filter((task) => task.dueDate === activeDate).length;
+    calendarSummary.textContent = `Showing ${count} task${count !== 1 ? "s" : ""} due on ${activeDate}.`;
+  }
+}
+
 taskForm.addEventListener("submit", (event) => {
   event.preventDefault();
   addTask({
@@ -249,6 +312,7 @@ taskForm.addEventListener("submit", (event) => {
     notes: taskNotes.value.trim(),
     priority: taskPriority.value,
     tag: taskTag.value.trim(),
+    dueDate: taskDueDate.value,
   });
   taskForm.reset();
   taskPriority.value = "medium";
@@ -260,5 +324,14 @@ clearCompletedButton.addEventListener("click", clearCompleted);
 exportMarkdownButton.addEventListener("click", exportMarkdown);
 importMarkdownButton.addEventListener("click", importMarkdown);
 copyMarkdownButton.addEventListener("click", copyMarkdown);
+calendarDate.addEventListener("change", () => {
+  activeDate = calendarDate.value;
+  render();
+});
+clearDateFilterButton.addEventListener("click", () => {
+  activeDate = "";
+  calendarDate.value = "";
+  render();
+});
 
 render();
