@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Todo List</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app__header">
+        <div>
+          <h1>Todo List</h1>
+          <p>Track tasks in your browser and sync with Obsidian using Markdown checklists.</p>
+        </div>
+        <div class="app__meta">
+          <span id="task-count">0 tasks</span>
+          <button id="clear-completed" class="secondary">Clear completed</button>
+        </div>
+      </header>
+
+      <section class="card">
+        <form id="task-form" autocomplete="off">
+          <label class="field">
+            <span>New task</span>
+            <input id="task-input" type="text" placeholder="Add a task" required />
+          </label>
+          <label class="field">
+            <span>Notes</span>
+            <input id="task-notes" type="text" placeholder="Optional details" />
+          </label>
+          <div class="form-row">
+            <label class="field">
+              <span>Priority</span>
+              <select id="task-priority">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Tag</span>
+              <input id="task-tag" type="text" placeholder="e.g. #work" />
+            </label>
+            <button type="submit" class="primary">Add task</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="filter-row">
+          <div class="filters" role="group" aria-label="Filter tasks">
+            <button class="filter active" data-filter="all">All</button>
+            <button class="filter" data-filter="active">Active</button>
+            <button class="filter" data-filter="completed">Completed</button>
+          </div>
+          <input id="search-input" type="search" placeholder="Search tasks" />
+        </div>
+        <ul id="task-list" class="task-list"></ul>
+      </section>
+
+      <section class="card">
+        <div class="card__header">
+          <h2>Obsidian Integration</h2>
+          <button id="export-markdown" class="secondary">Export to Markdown</button>
+        </div>
+        <p class="muted">
+          Use Markdown checklists to sync with Obsidian. Paste a checklist below and import it, or
+          copy the exported list into an Obsidian note.
+        </p>
+        <textarea id="markdown-area" rows="8" placeholder="- [ ] Example task"></textarea>
+        <div class="card__actions">
+          <button id="import-markdown" class="primary">Import from Markdown</button>
+          <button id="copy-markdown" class="secondary">Copy to clipboard</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
