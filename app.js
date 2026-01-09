@@ -5,7 +5,6 @@ const taskInput = document.querySelector("#task-input");
 const taskNotes = document.querySelector("#task-notes");
 const taskPriority = document.querySelector("#task-priority");
 const taskTag = document.querySelector("#task-tag");
-const taskDueDate = document.querySelector("#task-due-date");
 const taskList = document.querySelector("#task-list");
 const taskCount = document.querySelector("#task-count");
 const searchInput = document.querySelector("#search-input");
