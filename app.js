@@ -5,6 +5,7 @@ const taskInput = document.querySelector("#task-input");
 const taskNotes = document.querySelector("#task-notes");
 const taskPriority = document.querySelector("#task-priority");
 const taskTag = document.querySelector("#task-tag");
+const taskDueDate = document.querySelector("#task-due-date");
 const taskList = document.querySelector("#task-list");
 const taskCount = document.querySelector("#task-count");
 const searchInput = document.querySelector("#search-input");
@@ -23,6 +24,13 @@ const calendarEmpty = document.querySelector("#calendar-empty");
 let tasks = loadTasks();
 let activeFilter = "all";
 let activeDate = "";
+
+function generateId() {
+  if (crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function loadTasks() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -43,8 +51,11 @@ function saveTasks() {
 }
 
 function addTask({ title, notes, priority, tag, dueDate }) {
+  if (!title.trim()) {
+    return;
+  }
   tasks.unshift({
-    id: crypto.randomUUID(),
+    id: generateId(),
     title,
     notes,
     priority,
@@ -231,7 +242,7 @@ function importMarkdown() {
     const notes = notesPart ? notesPart.trim() : "";
 
     return {
-      id: crypto.randomUUID(),
+      id: generateId(),
       title,
       notes,
       priority,
