@@ -5,7 +5,7 @@ checklists for Obsidian integration.
 
 ## Features
 
-- Add tasks with notes, priority, and tags.
+- Add tasks with notes, priority, tags, and due dates.
 - Filter and search tasks.
 - Export and import Markdown checklists for Obsidian.
 - Runs as a static site (ideal for GitHub Pages).
@@ -20,4 +20,3 @@ checklists for Obsidian integration.
 
 - Use **Export to Markdown** and paste into an Obsidian note.
 - Paste any Obsidian checklist into the importer to sync tasks.
-
