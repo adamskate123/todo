@@ -3,8 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Todo List</title>
+    <meta name="description" content="A versatile to-do app for busy professionals balancing work and home life" />
+    <meta name="theme-color" content="#3f6df6" />
+    <title>Todo List - Medical Professional Edition</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
   </head>
   <body>
     <div class="app">
@@ -41,12 +45,37 @@
                   </select>
                 </label>
                 <label class="field">
-                  <span>Tag</span>
-                  <input id="task-tag" type="text" placeholder="e.g. #work" />
+                  <span>Category</span>
+                  <select id="task-category">
+                    <option value="work">Work</option>
+                    <option value="home">Home</option>
+                    <option value="research">Research</option>
+                    <option value="clinical">Clinical</option>
+                    <option value="teaching">Teaching</option>
+                  </select>
                 </label>
+                <label class="field">
+                  <span>Tag</span>
+                  <input id="task-tag" type="text" placeholder="e.g. #urgent" />
+                </label>
+              </div>
+              <div class="form-row">
                 <label class="field">
                   <span>Due date</span>
                   <input id="task-due-date" type="date" />
+                </label>
+                <label class="field">
+                  <span>Due time</span>
+                  <input id="task-due-time" type="time" />
+                </label>
+                <label class="field">
+                  <span>Recurrence</span>
+                  <select id="task-recurrence">
+                    <option value="">None</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
                 </label>
                 <button type="submit" class="primary">Add task</button>
               </div>
@@ -62,7 +91,45 @@
               </div>
               <input id="search-input" type="search" placeholder="Search tasks" />
             </div>
+            <div class="filter-row">
+              <div class="category-filters" role="group" aria-label="Filter by category">
+                <button class="category-filter active" data-category="">All Categories</button>
+                <button class="category-filter" data-category="work">Work</button>
+                <button class="category-filter" data-category="home">Home</button>
+                <button class="category-filter" data-category="research">Research</button>
+                <button class="category-filter" data-category="clinical">Clinical</button>
+                <button class="category-filter" data-category="teaching">Teaching</button>
+              </div>
+            </div>
             <ul id="task-list" class="task-list"></ul>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h2>Quick Capture</h2>
+            </div>
+            <p class="muted">
+              Quickly add a task with smart parsing. Use !high, !medium, !low for priority, #tag for tags, and category: for categories.
+            </p>
+            <div class="quick-capture">
+              <input id="quick-capture-input" type="text" placeholder="e.g., Call Dr. Smith tomorrow 2pm #urgent !high category:clinical" />
+              <button id="quick-capture-btn" class="primary">Quick Add</button>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h2>Task Templates</h2>
+            </div>
+            <p class="muted">
+              Pre-configured templates for common tasks.
+            </p>
+            <div class="template-buttons">
+              <button class="template-btn secondary" data-template="patient-referral">New Patient Referral</button>
+              <button class="template-btn secondary" data-template="research-review">Research Paper Review</button>
+              <button class="template-btn secondary" data-template="conference-prep">Conference Prep</button>
+              <button class="template-btn secondary" data-template="family-event">Family Event</button>
+            </div>
           </section>
 
           <section class="card">
@@ -100,6 +167,17 @@
       </div>
     </div>
 
+    <!-- Floating Quick Add Button -->
+    <button id="floating-quick-add" class="floating-btn" title="Quick Add Task">+</button>
+
     <script src="app.js"></script>
+    <script>
+      // Register service worker for PWA
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then(reg => console.log('Service Worker registered'))
+          .catch(err => console.log('Service Worker registration failed', err));
+      }
+    </script>
   </body>
 </html>
