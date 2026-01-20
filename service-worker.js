@@ -1,10 +1,11 @@
 const CACHE_NAME = 'medtodo-v1';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/app.js',
-  '/styles.css',
-  '/manifest.json'
+  './',
+  './index.html',
+  './app.js',
+  './styles.css',
+  './manifest.json',
+  './icon.svg'
 ];
 
 // Install event - cache resources
@@ -91,8 +92,8 @@ async function syncTasks() {
 self.addEventListener('push', (event) => {
   const options = {
     body: event.data ? event.data.text() : 'You have a task due soon!',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: './icon.svg',
+    badge: './icon.svg',
     vibrate: [200, 100, 200],
     tag: 'task-reminder',
     requireInteraction: false
@@ -107,6 +108,6 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
-    clients.openWindow('/')
+    clients.openWindow('./')
   );
 });

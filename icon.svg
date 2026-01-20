@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3f6df6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2555d9;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="url(#grad)"/>
+
+  <!-- Clipboard/checklist icon -->
+  <rect x="140" y="100" width="232" height="312" rx="20" fill="white" opacity="0.95"/>
+
+  <!-- Clipboard clip at top -->
+  <rect x="220" y="80" width="72" height="40" rx="8" fill="#2555d9"/>
+  <rect x="230" y="90" width="52" height="20" rx="4" fill="white"/>
+
+  <!-- Checkmark items -->
+  <!-- First checkbox (checked) -->
+  <rect x="170" y="160" width="36" height="36" rx="6" fill="#2ecc71"/>
+  <path d="M 178 178 L 188 188 L 200 168" stroke="white" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="220" y1="178" x2="340" y2="178" stroke="#3f6df6" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Second checkbox (checked) -->
+  <rect x="170" y="220" width="36" height="36" rx="6" fill="#2ecc71"/>
+  <path d="M 178 238 L 188 248 L 200 228" stroke="white" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="220" y1="238" x2="340" y2="238" stroke="#3f6df6" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Third checkbox (empty/active) -->
+  <rect x="170" y="280" width="36" height="36" rx="6" fill="none" stroke="#d9dfeb" stroke-width="3"/>
+  <line x1="220" y1="298" x2="340" y2="298" stroke="#5f6b7c" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Fourth checkbox (empty/active) -->
+  <rect x="170" y="340" width="36" height="36" rx="6" fill="none" stroke="#d9dfeb" stroke-width="3"/>
+  <line x1="220" y1="358" x2="340" y2="358" stroke="#5f6b7c" stroke-width="4" stroke-linecap="round"/>
+</svg>
