@@ -2,7 +2,8 @@
   "name": "Medical Professional Todo List",
   "short_name": "MedTodo",
   "description": "A versatile to-do app for busy medical professionals balancing work and home life",
-  "start_url": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f5f6fb",
   "theme_color": "#3f6df6",
@@ -33,7 +34,7 @@
       "name": "Quick Add Task",
       "short_name": "Add Task",
       "description": "Quickly add a new task",
-      "url": "/?action=quick-add",
+      "url": "./?action=quick-add",
       "icons": [
         {
           "src": "icon.svg",
@@ -46,7 +47,7 @@
       "name": "View Clinical Tasks",
       "short_name": "Clinical",
       "description": "View clinical tasks",
-      "url": "/?category=clinical",
+      "url": "./?category=clinical",
       "icons": [
         {
           "src": "icon.svg",
@@ -59,7 +60,7 @@
       "name": "View Home Tasks",
       "short_name": "Home",
       "description": "View home tasks",
-      "url": "/?category=home",
+      "url": "./?category=home",
       "icons": [
         {
           "src": "icon.svg",
