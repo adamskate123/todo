@@ -1,29 +1,82 @@
 const STORAGE_KEY = "todo.tasks";
 
+// Form elements
 const taskForm = document.querySelector("#task-form");
 const taskInput = document.querySelector("#task-input");
 const taskNotes = document.querySelector("#task-notes");
 const taskPriority = document.querySelector("#task-priority");
+const taskCategory = document.querySelector("#task-category");
 const taskTag = document.querySelector("#task-tag");
 const taskDueDate = document.querySelector("#task-due-date");
+const taskDueTime = document.querySelector("#task-due-time");
+const taskRecurrence = document.querySelector("#task-recurrence");
+
+// Display elements
 const taskList = document.querySelector("#task-list");
 const taskCount = document.querySelector("#task-count");
 const searchInput = document.querySelector("#search-input");
 const filterButtons = document.querySelectorAll(".filter");
+const categoryFilterButtons = document.querySelectorAll(".category-filter");
 const clearCompletedButton = document.querySelector("#clear-completed");
+
+// Quick capture
+const quickCaptureInput = document.querySelector("#quick-capture-input");
+const quickCaptureBtn = document.querySelector("#quick-capture-btn");
+const floatingQuickAddBtn = document.querySelector("#floating-quick-add");
+
+// Templates
+const templateButtons = document.querySelectorAll(".template-btn");
+
+// Markdown
 const markdownArea = document.querySelector("#markdown-area");
 const exportMarkdownButton = document.querySelector("#export-markdown");
 const importMarkdownButton = document.querySelector("#import-markdown");
 const copyMarkdownButton = document.querySelector("#copy-markdown");
+
+// Calendar
 const calendarDate = document.querySelector("#calendar-date");
 const clearDateFilterButton = document.querySelector("#clear-date-filter");
 const calendarList = document.querySelector("#calendar-list");
 const calendarSummary = document.querySelector("#calendar-summary");
 const calendarEmpty = document.querySelector("#calendar-empty");
 
+// State
 let tasks = loadTasks();
 let activeFilter = "all";
+let activeCategory = "";
 let activeDate = "";
+
+// Task templates
+const TEMPLATES = {
+  "patient-referral": {
+    title: "New Patient Referral",
+    notes: "Review referral, Schedule initial consultation, Prepare case history",
+    priority: "high",
+    category: "clinical",
+    tag: "#patient",
+  },
+  "research-review": {
+    title: "Research Paper Review",
+    notes: "Read abstract, Review methodology, Analyze results, Write summary",
+    priority: "medium",
+    category: "research",
+    tag: "#paper",
+  },
+  "conference-prep": {
+    title: "Conference Preparation",
+    notes: "Prepare abstract, Create presentation slides, Rehearse talk, Book travel",
+    priority: "medium",
+    category: "research",
+    tag: "#conference",
+  },
+  "family-event": {
+    title: "Family Event",
+    notes: "Plan activity, Confirm schedules, Make arrangements",
+    priority: "low",
+    category: "home",
+    tag: "#family",
+  },
+};
 
 function generateId() {
   if (crypto.randomUUID) {
@@ -50,22 +103,30 @@ function saveTasks() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
 }
 
-function addTask({ title, notes, priority, tag, dueDate }) {
+function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recurrence }) {
   if (!title.trim()) {
     return;
   }
-  tasks.unshift({
+
+  const task = {
     id: generateId(),
-    title,
-    notes,
+    title: title.trim(),
+    notes: notes.trim(),
     priority,
-    tag,
+    category,
+    tag: tag.trim(),
     dueDate,
+    dueTime: dueTime || "",
+    recurrence: recurrence || "",
     completed: false,
     createdAt: new Date().toISOString(),
-  });
+  };
+
+  tasks.unshift(task);
   saveTasks();
   render();
+
+  return task;
 }
 
 function updateTask(id, updates) {
@@ -86,25 +147,94 @@ function clearCompleted() {
   render();
 }
 
+function completeTask(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+
+  // Mark as completed
+  updateTask(id, { completed: true });
+
+  // If recurring, create next occurrence
+  if (task.recurrence && task.dueDate) {
+    const nextDate = calculateNextDate(task.dueDate, task.recurrence);
+    if (nextDate) {
+      addTask({
+        title: task.title,
+        notes: task.notes,
+        priority: task.priority,
+        category: task.category,
+        tag: task.tag,
+        dueDate: nextDate,
+        dueTime: task.dueTime,
+        recurrence: task.recurrence,
+      });
+    }
+  }
+}
+
+function calculateNextDate(dateString, recurrence) {
+  const date = new Date(dateString);
+
+  switch (recurrence) {
+    case "daily":
+      date.setDate(date.getDate() + 1);
+      break;
+    case "weekly":
+      date.setDate(date.getDate() + 7);
+      break;
+    case "monthly":
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      return null;
+  }
+
+  return date.toISOString().split('T')[0];
+}
+
 function filterTasks(list) {
   const search = searchInput.value.trim().toLowerCase();
   return list.filter((task) => {
     const matchesDate = !activeDate || task.dueDate === activeDate;
     const matchesSearch =
       !search ||
-      [task.title, task.notes, task.tag]
+      [task.title, task.notes, task.tag, task.category]
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(search));
     const matchesFilter =
       activeFilter === "all" ||
       (activeFilter === "active" && !task.completed) ||
       (activeFilter === "completed" && task.completed);
-    return matchesDate && matchesSearch && matchesFilter;
+    const matchesCategory = !activeCategory || task.category === activeCategory;
+    return matchesDate && matchesSearch && matchesFilter && matchesCategory;
+  });
+}
+
+function sortTasks(list) {
+  return list.slice().sort((a, b) => {
+    // Sort by date first
+    if (a.dueDate && b.dueDate) {
+      const dateCompare = a.dueDate.localeCompare(b.dueDate);
+      if (dateCompare !== 0) return dateCompare;
+
+      // If same date, sort by time
+      if (a.dueTime && b.dueTime) {
+        return a.dueTime.localeCompare(b.dueTime);
+      }
+      if (a.dueTime) return -1;
+      if (b.dueTime) return 1;
+    }
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+
+    // No dates, sort by priority
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    return priorityOrder[a.priority] - priorityOrder[b.priority];
   });
 }
 
 function render() {
-  const visibleTasks = filterTasks(tasks);
+  const visibleTasks = sortTasks(filterTasks(tasks));
   taskList.innerHTML = "";
 
   visibleTasks.forEach((task) => {
@@ -115,7 +245,11 @@ function render() {
     checkbox.type = "checkbox";
     checkbox.checked = task.completed;
     checkbox.addEventListener("change", () => {
-      updateTask(task.id, { completed: checkbox.checked });
+      if (checkbox.checked) {
+        completeTask(task.id);
+      } else {
+        updateTask(task.id, { completed: false });
+      }
     });
 
     const title = document.createElement("div");
@@ -131,19 +265,35 @@ function render() {
     const meta = document.createElement("div");
     meta.className = "task__meta";
 
+    const category = document.createElement("span");
+    category.className = `badge badge-${task.category}`;
+    category.textContent = task.category ? `${task.category.charAt(0).toUpperCase() + task.category.slice(1)}` : "No category";
+
     const priority = document.createElement("span");
-    priority.className = "badge";
+    priority.className = `badge badge-priority-${task.priority}`;
     priority.textContent = `Priority: ${task.priority}`;
 
     const tag = document.createElement("span");
     tag.className = "badge";
-    tag.textContent = task.tag ? `Tag: ${task.tag}` : "No tag";
+    tag.textContent = task.tag ? `${task.tag}` : "No tag";
 
     const dueDate = document.createElement("span");
     dueDate.className = "badge";
-    dueDate.textContent = task.dueDate ? `Due: ${task.dueDate}` : "No due date";
+    if (task.dueDate) {
+      const dateText = task.dueTime ? `${task.dueDate} ${task.dueTime}` : task.dueDate;
+      dueDate.textContent = `Due: ${dateText}`;
+    } else {
+      dueDate.textContent = "No due date";
+    }
 
-    meta.append(priority, tag, dueDate);
+    if (task.recurrence) {
+      const recurrence = document.createElement("span");
+      recurrence.className = "badge badge-recurrence";
+      recurrence.textContent = `↻ ${task.recurrence}`;
+      meta.append(recurrence);
+    }
+
+    meta.append(category, priority, tag, dueDate);
     title.append(titleText, notesText, meta);
 
     const actions = document.createElement("div");
@@ -165,7 +315,19 @@ function render() {
     taskList.append(listItem);
   });
 
-  taskCount.textContent = `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`;
+  // Update task count with category breakdown
+  const categoryStats = tasks.reduce((acc, task) => {
+    acc[task.category] = (acc[task.category] || 0) + 1;
+    return acc;
+  }, {});
+
+  let countText = `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`;
+  if (activeCategory) {
+    const catCount = categoryStats[activeCategory] || 0;
+    countText += ` (${catCount} ${activeCategory})`;
+  }
+  taskCount.textContent = countText;
+
   renderCalendar();
 }
 
@@ -176,16 +338,21 @@ function startEdit(task) {
   }
   const newNotes = window.prompt("Update notes", task.notes || "") ?? task.notes;
   const newPriority = window.prompt("Update priority (low, medium, high)", task.priority) || task.priority;
+  const newCategory = window.prompt("Update category (work, home, research, clinical, teaching)", task.category) || task.category;
   const newTag = window.prompt("Update tag", task.tag || "") ?? task.tag;
-  const newDueDate =
-    window.prompt("Update due date (YYYY-MM-DD)", task.dueDate || "") ?? task.dueDate;
+  const newDueDate = window.prompt("Update due date (YYYY-MM-DD)", task.dueDate || "") ?? task.dueDate;
+  const newDueTime = window.prompt("Update due time (HH:MM)", task.dueTime || "") ?? task.dueTime;
+  const newRecurrence = window.prompt("Update recurrence (daily, weekly, monthly, or leave empty)", task.recurrence || "") ?? task.recurrence;
 
   updateTask(task.id, {
     title: newTitle.trim(),
     notes: newNotes.trim(),
     priority: normalizePriority(newPriority),
+    category: normalizeCategory(newCategory),
     tag: newTag.trim(),
     dueDate: newDueDate.trim(),
+    dueTime: newDueTime.trim(),
+    recurrence: normalizeRecurrence(newRecurrence),
   });
 }
 
@@ -197,6 +364,127 @@ function normalizePriority(value) {
   return "medium";
 }
 
+function normalizeCategory(value) {
+  const cleaned = value.toLowerCase();
+  if (["work", "home", "research", "clinical", "teaching"].includes(cleaned)) {
+    return cleaned;
+  }
+  return "work";
+}
+
+function normalizeRecurrence(value) {
+  const cleaned = value.toLowerCase();
+  if (["daily", "weekly", "monthly"].includes(cleaned)) {
+    return cleaned;
+  }
+  return "";
+}
+
+function parseQuickCapture(text) {
+  let title = text;
+  let priority = "medium";
+  let category = "work";
+  let tag = "";
+  let dueDate = "";
+  let dueTime = "";
+
+  // Extract priority (!high, !medium, !low)
+  const priorityMatch = text.match(/!(high|medium|low)/i);
+  if (priorityMatch) {
+    priority = priorityMatch[1].toLowerCase();
+    title = title.replace(priorityMatch[0], "").trim();
+  }
+
+  // Extract category (category:work, category:home, etc.)
+  const categoryMatch = text.match(/category:(work|home|research|clinical|teaching)/i);
+  if (categoryMatch) {
+    category = categoryMatch[1].toLowerCase();
+    title = title.replace(categoryMatch[0], "").trim();
+  }
+
+  // Extract tag (#something)
+  const tagMatch = text.match(/#\w[\w-]*/);
+  if (tagMatch) {
+    tag = tagMatch[0];
+    title = title.replace(tagMatch[0], "").trim();
+  }
+
+  // Extract time (HH:MM, H:MM, HHam, HHpm, etc.)
+  const timeMatch = text.match(/\b(\d{1,2}):?(\d{2})?\s?(am|pm)?\b/i);
+  if (timeMatch) {
+    let hours = parseInt(timeMatch[1]);
+    const minutes = timeMatch[2] || "00";
+    const meridiem = timeMatch[3]?.toLowerCase();
+
+    if (meridiem === "pm" && hours < 12) hours += 12;
+    if (meridiem === "am" && hours === 12) hours = 0;
+
+    dueTime = `${hours.toString().padStart(2, "0")}:${minutes}`;
+    title = title.replace(timeMatch[0], "").trim();
+  }
+
+  // Extract date (tomorrow, today, or YYYY-MM-DD)
+  const today = new Date();
+  if (/\btomorrow\b/i.test(text)) {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    dueDate = tomorrow.toISOString().split('T')[0];
+    title = title.replace(/\btomorrow\b/i, "").trim();
+  } else if (/\btoday\b/i.test(text)) {
+    dueDate = today.toISOString().split('T')[0];
+    title = title.replace(/\btoday\b/i, "").trim();
+  } else {
+    const dateMatch = text.match(/\b\d{4}-\d{2}-\d{2}\b/);
+    if (dateMatch) {
+      dueDate = dateMatch[0];
+      title = title.replace(dateMatch[0], "").trim();
+    }
+  }
+
+  return {
+    title: title.trim(),
+    priority,
+    category,
+    tag,
+    dueDate,
+    dueTime,
+  };
+}
+
+function handleQuickCapture() {
+  const text = quickCaptureInput.value.trim();
+  if (!text) return;
+
+  const parsed = parseQuickCapture(text);
+  addTask({
+    title: parsed.title,
+    notes: "",
+    priority: parsed.priority,
+    category: parsed.category,
+    tag: parsed.tag,
+    dueDate: parsed.dueDate,
+    dueTime: parsed.dueTime,
+    recurrence: "",
+  });
+
+  quickCaptureInput.value = "";
+}
+
+function applyTemplate(templateName) {
+  const template = TEMPLATES[templateName];
+  if (!template) return;
+
+  taskInput.value = template.title;
+  taskNotes.value = template.notes;
+  taskPriority.value = template.priority;
+  taskCategory.value = template.category;
+  taskTag.value = template.tag;
+
+  // Scroll to form
+  taskForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  taskInput.focus();
+}
+
 function exportMarkdown() {
   const lines = tasks
     .slice()
@@ -205,9 +493,16 @@ function exportMarkdown() {
       const checkbox = task.completed ? "- [x]" : "- [ ]";
       const notes = task.notes ? ` — ${task.notes}` : "";
       const tag = task.tag ? ` ${task.tag}` : "";
-      const metaParts = [`priority: ${task.priority}`];
+      const metaParts = [
+        `priority: ${task.priority}`,
+        `category: ${task.category}`,
+      ];
       if (task.dueDate) {
-        metaParts.push(`due: ${task.dueDate}`);
+        const dateTime = task.dueTime ? `${task.dueDate} ${task.dueTime}` : task.dueDate;
+        metaParts.push(`due: ${dateTime}`);
+      }
+      if (task.recurrence) {
+        metaParts.push(`recurrence: ${task.recurrence}`);
       }
       const metadata = ` (${metaParts.join(", ")})`;
       return `${checkbox} ${task.title}${notes}${tag}${metadata}`;
@@ -228,10 +523,25 @@ function importMarkdown() {
     const metadataMatch = content.match(/\(([^)]+)\)$/);
     const metadata = metadataMatch ? metadataMatch[1] : "";
     const metadataParts = metadata.split(",").map((part) => part.trim());
+
     const priorityPart = metadataParts.find((part) => part.toLowerCase().startsWith("priority:"));
+    const categoryPart = metadataParts.find((part) => part.toLowerCase().startsWith("category:"));
     const duePart = metadataParts.find((part) => part.toLowerCase().startsWith("due:"));
+    const recurrencePart = metadataParts.find((part) => part.toLowerCase().startsWith("recurrence:"));
+
     const priority = priorityPart ? normalizePriority(priorityPart.split(":")[1].trim()) : "medium";
-    const dueDate = duePart ? duePart.split(":")[1].trim() : "";
+    const category = categoryPart ? normalizeCategory(categoryPart.split(":")[1].trim()) : "work";
+    const recurrence = recurrencePart ? normalizeRecurrence(recurrencePart.split(":")[1].trim()) : "";
+
+    let dueDate = "";
+    let dueTime = "";
+    if (duePart) {
+      const dueValue = duePart.split(":")[1].trim();
+      const [datePart, timePart] = dueValue.split(" ");
+      dueDate = datePart;
+      dueTime = timePart || "";
+    }
+
     const contentWithoutMetadata = metadataMatch ? content.replace(metadataMatch[0], "").trim() : content;
 
     const tagMatch = contentWithoutMetadata.match(/#\w[\w-]*/);
@@ -246,8 +556,11 @@ function importMarkdown() {
       title,
       notes,
       priority,
+      category,
       tag,
       dueDate,
+      dueTime,
+      recurrence,
       completed,
       createdAt: new Date().toISOString(),
     };
@@ -278,11 +591,26 @@ function handleFilterClick(event) {
   render();
 }
 
+function handleCategoryFilterClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement)) {
+    return;
+  }
+  categoryFilterButtons.forEach((button) => button.classList.remove("active"));
+  target.classList.add("active");
+  activeCategory = target.dataset.category || "";
+  render();
+}
+
 function renderCalendar() {
   const withDueDates = tasks
     .filter((task) => task.dueDate)
     .slice()
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    .sort((a, b) => {
+      const dateCompare = a.dueDate.localeCompare(b.dueDate);
+      if (dateCompare !== 0) return dateCompare;
+      return (a.dueTime || "").localeCompare(b.dueTime || "");
+    });
 
   calendarEmpty.style.display = withDueDates.length ? "none" : "block";
   const upcoming = withDueDates.reduce((acc, task) => {
@@ -298,7 +626,15 @@ function renderCalendar() {
     const title = document.createElement("span");
     title.textContent = date;
     const detail = document.createElement("small");
-    detail.textContent = `${dateTasks.length} task${dateTasks.length !== 1 ? "s" : ""}`;
+
+    // Show time range if tasks have times
+    const withTimes = dateTasks.filter(t => t.dueTime);
+    if (withTimes.length > 0) {
+      detail.textContent = `${dateTasks.length} task${dateTasks.length !== 1 ? "s" : ""} (${withTimes[0].dueTime}${withTimes.length > 1 ? '...' : ''})`;
+    } else {
+      detail.textContent = `${dateTasks.length} task${dateTasks.length !== 1 ? "s" : ""}`;
+    }
+
     item.append(title, detail);
     item.addEventListener("click", () => {
       activeDate = date;
@@ -316,25 +652,55 @@ function renderCalendar() {
   }
 }
 
+// Event listeners
 taskForm.addEventListener("submit", (event) => {
   event.preventDefault();
   addTask({
     title: taskInput.value.trim(),
     notes: taskNotes.value.trim(),
     priority: taskPriority.value,
+    category: taskCategory.value,
     tag: taskTag.value.trim(),
     dueDate: taskDueDate.value,
+    dueTime: taskDueTime.value,
+    recurrence: taskRecurrence.value,
   });
   taskForm.reset();
   taskPriority.value = "medium";
+  taskCategory.value = "work";
 });
 
 filterButtons.forEach((button) => button.addEventListener("click", handleFilterClick));
+categoryFilterButtons.forEach((button) => button.addEventListener("click", handleCategoryFilterClick));
 searchInput.addEventListener("input", render);
 clearCompletedButton.addEventListener("click", clearCompleted);
 exportMarkdownButton.addEventListener("click", exportMarkdown);
 importMarkdownButton.addEventListener("click", importMarkdown);
 copyMarkdownButton.addEventListener("click", copyMarkdown);
+
+// Quick capture
+quickCaptureBtn.addEventListener("click", handleQuickCapture);
+quickCaptureInput.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") {
+    handleQuickCapture();
+  }
+});
+
+// Floating quick add button
+floatingQuickAddBtn.addEventListener("click", () => {
+  quickCaptureInput.focus();
+  quickCaptureInput.scrollIntoView({ behavior: "smooth", block: "center" });
+});
+
+// Templates
+templateButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const template = button.dataset.template;
+    applyTemplate(template);
+  });
+});
+
+// Calendar
 calendarDate.addEventListener("change", () => {
   activeDate = calendarDate.value;
   render();
@@ -345,4 +711,5 @@ clearDateFilterButton.addEventListener("click", () => {
   render();
 });
 
+// Initial render
 render();
