@@ -4,7 +4,8 @@ const urlsToCache = [
   '/index.html',
   '/app.js',
   '/styles.css',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon.svg'
 ];
 
 // Install event - cache resources
@@ -91,8 +92,8 @@ async function syncTasks() {
 self.addEventListener('push', (event) => {
   const options = {
     body: event.data ? event.data.text() : 'You have a task due soon!',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: '/icon.svg',
+    badge: '/icon.svg',
     vibrate: [200, 100, 200],
     tag: 'task-reminder',
     requireInteraction: false
