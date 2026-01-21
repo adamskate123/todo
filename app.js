@@ -51,11 +51,26 @@ const calendarList = document.querySelector("#calendar-list");
 const calendarSummary = document.querySelector("#calendar-summary");
 const calendarEmpty = document.querySelector("#calendar-empty");
 
+// Edit modal
+const editModal = document.querySelector("#edit-modal");
+const editForm = document.querySelector("#edit-form");
+const closeModalBtn = document.querySelector("#close-modal");
+const cancelEditBtn = document.querySelector("#cancel-edit");
+const editTitle = document.querySelector("#edit-title");
+const editNotes = document.querySelector("#edit-notes");
+const editPriority = document.querySelector("#edit-priority");
+const editCategory = document.querySelector("#edit-category");
+const editTag = document.querySelector("#edit-tag");
+const editDueDate = document.querySelector("#edit-due-date");
+const editDueTime = document.querySelector("#edit-due-time");
+const editRecurrence = document.querySelector("#edit-recurrence");
+
 // State
 let tasks = loadTasks();
 let activeFilter = "all";
 let activeCategory = "";
 let activeDate = "";
+let currentEditingTaskId = null;
 
 // Task templates
 const TEMPLATES = {
@@ -345,28 +360,46 @@ function render() {
 }
 
 function startEdit(task) {
-  const newTitle = window.prompt("Update task title", task.title);
-  if (!newTitle) {
-    return;
-  }
-  const newNotes = window.prompt("Update notes", task.notes || "") ?? task.notes;
-  const newPriority = window.prompt("Update priority (low, medium, high)", task.priority) || task.priority;
-  const newCategory = window.prompt("Update category (work, home, research, clinical, teaching)", task.category) || task.category;
-  const newTag = window.prompt("Update tag", task.tag || "") ?? task.tag;
-  const newDueDate = window.prompt("Update due date (YYYY-MM-DD)", task.dueDate || "") ?? task.dueDate;
-  const newDueTime = window.prompt("Update due time (HH:MM)", task.dueTime || "") ?? task.dueTime;
-  const newRecurrence = window.prompt("Update recurrence (daily, weekly, monthly, or leave empty)", task.recurrence || "") ?? task.recurrence;
+  currentEditingTaskId = task.id;
 
-  updateTask(task.id, {
-    title: newTitle.trim(),
-    notes: newNotes.trim(),
-    priority: normalizePriority(newPriority),
-    category: normalizeCategory(newCategory),
-    tag: newTag.trim(),
-    dueDate: newDueDate.trim(),
-    dueTime: newDueTime.trim(),
-    recurrence: normalizeRecurrence(newRecurrence),
+  // Populate the form
+  editTitle.value = task.title;
+  editNotes.value = task.notes || "";
+  editPriority.value = task.priority;
+  editCategory.value = task.category;
+  editTag.value = task.tag || "";
+  editDueDate.value = task.dueDate || "";
+  editDueTime.value = task.dueTime || "";
+  editRecurrence.value = task.recurrence || "";
+
+  // Show the modal
+  editModal.style.display = "flex";
+  editTitle.focus();
+}
+
+function closeEditModal() {
+  editModal.style.display = "none";
+  currentEditingTaskId = null;
+  editForm.reset();
+}
+
+function handleEditSubmit(event) {
+  event.preventDefault();
+
+  if (!currentEditingTaskId) return;
+
+  updateTask(currentEditingTaskId, {
+    title: editTitle.value.trim(),
+    notes: editNotes.value.trim(),
+    priority: editPriority.value,
+    category: editCategory.value,
+    tag: editTag.value.trim(),
+    dueDate: editDueDate.value,
+    dueTime: editDueTime.value,
+    recurrence: editRecurrence.value,
   });
+
+  closeEditModal();
 }
 
 function normalizePriority(value) {
@@ -400,19 +433,42 @@ function parseQuickCapture(text) {
   let tag = "";
   let dueDate = "";
   let dueTime = "";
+  let notes = "";
 
-  // Extract priority (!high, !medium, !low)
-  const priorityMatch = text.match(/!(high|medium|low)/i);
+  // Extract notes (notes:something or note:something)
+  const notesMatch = text.match(/notes?:\s*([^#!]+?)(?=\s+(?:#|!|category:|$))/i);
+  if (notesMatch) {
+    notes = notesMatch[1].trim();
+    title = title.replace(notesMatch[0], "").trim();
+  }
+
+  // Extract priority (!high, !medium, !low, or !! for high, ! for medium)
+  const priorityMatch = text.match(/!(high|medium|low)|!!+|!/i);
   if (priorityMatch) {
-    priority = priorityMatch[1].toLowerCase();
+    if (priorityMatch[0] === "!!!") {
+      priority = "high";
+    } else if (priorityMatch[0] === "!!") {
+      priority = "high";
+    } else if (priorityMatch[0] === "!") {
+      priority = "medium";
+    } else {
+      priority = priorityMatch[1].toLowerCase();
+    }
     title = title.replace(priorityMatch[0], "").trim();
   }
 
-  // Extract category (category:work, category:home, etc.)
-  const categoryMatch = text.match(/category:(work|home|research|clinical|teaching)/i);
+  // Extract category (category:work, or just category name at end)
+  const categoryMatch = text.match(/category:\s*(work|home|research|clinical|teaching)/i);
   if (categoryMatch) {
     category = categoryMatch[1].toLowerCase();
     title = title.replace(categoryMatch[0], "").trim();
+  } else {
+    // Check for category name without prefix at the end
+    const implicitCategoryMatch = text.match(/\b(work|home|research|clinical|teaching)\s*$/i);
+    if (implicitCategoryMatch) {
+      category = implicitCategoryMatch[1].toLowerCase();
+      title = title.replace(implicitCategoryMatch[0], "").trim();
+    }
   }
 
   // Extract tag (#something)
@@ -422,31 +478,115 @@ function parseQuickCapture(text) {
     title = title.replace(tagMatch[0], "").trim();
   }
 
-  // Extract time (HH:MM, H:MM, HHam, HHpm, etc.)
-  const timeMatch = text.match(/\b(\d{1,2}):?(\d{2})?\s?(am|pm)?\b/i);
+  // Extract time (improved: 2pm, 2:30pm, 14:00, 8a, 8p, "at 9a", etc.)
+  // Match time with optional "at" preposition
+  const timeMatch = text.match(/(?:at\s+)?(?:(\d{1,2})(?::(\d{2}))?\s*([ap]m?|AM?|PM?)\b|(\d{1,2}):(\d{2})\b)/i);
   if (timeMatch) {
-    let hours = parseInt(timeMatch[1]);
-    const minutes = timeMatch[2] || "00";
-    const meridiem = timeMatch[3]?.toLowerCase();
+    let hours, minutes, meridiem;
 
-    if (meridiem === "pm" && hours < 12) hours += 12;
-    if (meridiem === "am" && hours === 12) hours = 0;
+    if (timeMatch[4]) {
+      // Matched HH:MM without meridiem (e.g., "14:00")
+      hours = parseInt(timeMatch[4]);
+      minutes = timeMatch[5];
+      meridiem = null;
+    } else {
+      // Matched with optional meridiem
+      hours = parseInt(timeMatch[1]);
+      minutes = timeMatch[2] || "00";
+      meridiem = timeMatch[3]?.toLowerCase();
 
-    dueTime = `${hours.toString().padStart(2, "0")}:${minutes}`;
-    title = title.replace(timeMatch[0], "").trim();
+      // Normalize "a" to "am" and "p" to "pm"
+      if (meridiem === "a") meridiem = "am";
+      if (meridiem === "p") meridiem = "pm";
+    }
+
+    // Only process as time if it makes sense (1-12 with am/pm, or 0-23 without)
+    const isValidTime = (meridiem && hours >= 1 && hours <= 12) ||
+                        (!meridiem && hours >= 0 && hours <= 23);
+
+    if (isValidTime) {
+      if (meridiem === "pm" && hours < 12) hours += 12;
+      if (meridiem === "am" && hours === 12) hours = 0;
+
+      dueTime = `${hours.toString().padStart(2, "0")}:${minutes}`;
+      // Remove the entire match including "at" if present
+      title = title.replace(timeMatch[0], "").trim();
+    }
   }
 
-  // Extract date (tomorrow, today, or YYYY-MM-DD)
+  // Extract date (enhanced natural language)
   const today = new Date();
-  if (/\btomorrow\b/i.test(text)) {
+  today.setHours(0, 0, 0, 0);
+
+  // Handle "in X days/weeks"
+  const inDaysMatch = text.match(/\bin\s+(\d+)\s+(day|days|week|weeks)\b/i);
+  if (inDaysMatch) {
+    const num = parseInt(inDaysMatch[1]);
+    const unit = inDaysMatch[2].toLowerCase();
+    const targetDate = new Date(today);
+
+    if (unit.startsWith('day')) {
+      targetDate.setDate(targetDate.getDate() + num);
+    } else if (unit.startsWith('week')) {
+      targetDate.setDate(targetDate.getDate() + (num * 7));
+    }
+
+    dueDate = targetDate.toISOString().split('T')[0];
+    title = title.replace(inDaysMatch[0], "").trim();
+  }
+  // Handle "next [day]" (e.g., "next monday", "next friday")
+  else if (text.match(/\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i)) {
+    const dayMatch = text.match(/\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+    const targetDayName = dayMatch[1].toLowerCase();
+    const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const targetDayIndex = daysOfWeek.indexOf(targetDayName);
+    const currentDayIndex = today.getDay();
+
+    let daysUntil = targetDayIndex - currentDayIndex;
+    if (daysUntil <= 0) daysUntil += 7; // Next week
+
+    const targetDate = new Date(today);
+    targetDate.setDate(targetDate.getDate() + daysUntil);
+    dueDate = targetDate.toISOString().split('T')[0];
+    title = title.replace(dayMatch[0], "").trim();
+  }
+  // Handle day names (next occurrence)
+  else if (text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i)) {
+    const dayMatch = text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+    const targetDayName = dayMatch[1].toLowerCase();
+    const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const targetDayIndex = daysOfWeek.indexOf(targetDayName);
+    const currentDayIndex = today.getDay();
+
+    let daysUntil = targetDayIndex - currentDayIndex;
+    if (daysUntil <= 0) daysUntil += 7; // If today or past, go to next week
+
+    const targetDate = new Date(today);
+    targetDate.setDate(targetDate.getDate() + daysUntil);
+    dueDate = targetDate.toISOString().split('T')[0];
+    title = title.replace(dayMatch[0], "").trim();
+  }
+  // Handle "next week"
+  else if (/\bnext\s+week\b/i.test(text)) {
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    dueDate = nextWeek.toISOString().split('T')[0];
+    title = title.replace(/\bnext\s+week\b/i, "").trim();
+  }
+  // Handle "tomorrow"
+  else if (/\btomorrow\b/i.test(text)) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     dueDate = tomorrow.toISOString().split('T')[0];
     title = title.replace(/\btomorrow\b/i, "").trim();
-  } else if (/\btoday\b/i.test(text)) {
+  }
+  // Handle "today"
+  else if (/\btoday\b/i.test(text)) {
     dueDate = today.toISOString().split('T')[0];
     title = title.replace(/\btoday\b/i, "").trim();
-  } else {
+  }
+  // Handle YYYY-MM-DD format
+  else {
     const dateMatch = text.match(/\b\d{4}-\d{2}-\d{2}\b/);
     if (dateMatch) {
       dueDate = dateMatch[0];
@@ -461,6 +601,7 @@ function parseQuickCapture(text) {
     tag,
     dueDate,
     dueTime,
+    notes,
   };
 }
 
@@ -471,7 +612,7 @@ function handleQuickCapture() {
   const parsed = parseQuickCapture(text);
   addTask({
     title: parsed.title,
-    notes: "",
+    notes: parsed.notes || "",
     priority: parsed.priority,
     category: parsed.category,
     tag: parsed.tag,
@@ -986,6 +1127,25 @@ function renderWeekView() {
 
 // Calendar export event listener
 exportCalendarButton.addEventListener("click", exportToCalendar);
+
+// Edit modal event listeners
+editForm.addEventListener("submit", handleEditSubmit);
+closeModalBtn.addEventListener("click", closeEditModal);
+cancelEditBtn.addEventListener("click", closeEditModal);
+
+// Close modal when clicking outside
+editModal.addEventListener("click", (e) => {
+  if (e.target === editModal) {
+    closeEditModal();
+  }
+});
+
+// Close modal on Escape key
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && editModal.style.display === "flex") {
+    closeEditModal();
+  }
+});
 
 // Initial render
 render();

@@ -33,6 +33,19 @@
       <div class="layout">
         <main class="main">
           <section class="card">
+            <div class="card__header">
+              <h2>Quick Capture</h2>
+            </div>
+            <p class="muted">
+              Just type naturally! Examples: "Call Dr. Smith tomorrow 2pm #urgent !high clinical" or "Review paper next monday work" or "Meeting in 3 days 3pm note: bring slides"
+            </p>
+            <div class="quick-capture">
+              <input id="quick-capture-input" type="text" placeholder="e.g., Call Dr. Smith next friday 2pm #urgent !! clinical" />
+              <button id="quick-capture-btn" class="primary">Quick Add</button>
+            </div>
+          </section>
+
+          <section class="card">
             <form id="task-form" autocomplete="off">
               <label class="field">
                 <span>New task</span>
@@ -109,19 +122,6 @@
               </div>
             </div>
             <ul id="task-list" class="task-list"></ul>
-          </section>
-
-          <section class="card">
-            <div class="card__header">
-              <h2>Quick Capture</h2>
-            </div>
-            <p class="muted">
-              Quickly add a task with smart parsing. Use !high, !medium, !low for priority, #tag for tags, and category: for categories.
-            </p>
-            <div class="quick-capture">
-              <input id="quick-capture-input" type="text" placeholder="e.g., Call Dr. Smith tomorrow 2pm #urgent !high category:clinical" />
-              <button id="quick-capture-btn" class="primary">Quick Add</button>
-            </div>
           </section>
 
           <section class="card">
@@ -233,6 +233,73 @@
 
     <!-- Floating Quick Add Button -->
     <button id="floating-quick-add" class="floating-btn" title="Quick Add Task">+</button>
+
+    <!-- Edit Task Modal -->
+    <div id="edit-modal" class="modal" style="display: none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Edit Task</h2>
+          <button id="close-modal" class="close-btn">&times;</button>
+        </div>
+        <form id="edit-form">
+          <label class="field">
+            <span>Task title</span>
+            <input id="edit-title" type="text" required />
+          </label>
+          <label class="field">
+            <span>Notes</span>
+            <input id="edit-notes" type="text" />
+          </label>
+          <div class="form-row">
+            <label class="field">
+              <span>Priority</span>
+              <select id="edit-priority">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Category</span>
+              <select id="edit-category">
+                <option value="work">Work</option>
+                <option value="home">Home</option>
+                <option value="research">Research</option>
+                <option value="clinical">Clinical</option>
+                <option value="teaching">Teaching</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Tag</span>
+              <input id="edit-tag" type="text" placeholder="e.g. #urgent" />
+            </label>
+          </div>
+          <div class="form-row">
+            <label class="field">
+              <span>Due date</span>
+              <input id="edit-due-date" type="date" />
+            </label>
+            <label class="field">
+              <span>Due time</span>
+              <input id="edit-due-time" type="time" />
+            </label>
+            <label class="field">
+              <span>Recurrence</span>
+              <select id="edit-recurrence">
+                <option value="">None</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="cancel-edit" class="secondary">Cancel</button>
+            <button type="submit" class="primary">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <script src="app.js"></script>
     <script>
