@@ -1,14 +1,29 @@
 // Firebase Configuration
 // IMPORTANT: Replace these with your own Firebase project credentials
 // Get them from: https://console.firebase.google.com/
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyDLZ5zc91Aj_07DIJA2nZ946I8A1K6V8NQ",
+    authDomain: "todo-app-8466f.firebaseapp.com",
+    projectId: "todo-app-8466f",
+    storageBucket: "todo-app-8466f.firebasestorage.app",
+    messagingSenderId: "1011391481429",
+    appId: "1:1011391481429:web:99cde3df7de89cbe9336dc",
+    measurementId: "G-8YCKCF3J4W"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
 
 // Instructions to set up Firebase:
 // 1. Go to https://console.firebase.google.com/
