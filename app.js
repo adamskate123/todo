@@ -38,6 +38,12 @@ const exportJsonButton = document.querySelector("#export-json");
 const importJsonButton = document.querySelector("#import-json-btn");
 const importJsonFile = document.querySelector("#import-json-file");
 
+// Calendar Integration
+const exportCalendarButton = document.querySelector("#export-calendar");
+const todaySchedule = document.querySelector("#today-schedule");
+const todayCount = document.querySelector("#today-count");
+const weekView = document.querySelector("#week-view");
+
 // Calendar
 const calendarDate = document.querySelector("#calendar-date");
 const clearDateFilterButton = document.querySelector("#clear-date-filter");
@@ -334,6 +340,8 @@ function render() {
   taskCount.textContent = countText;
 
   renderCalendar();
+  renderTodaySchedule();
+  renderWeekView();
 }
 
 function startEdit(task) {
@@ -783,6 +791,201 @@ function importJson(event) {
 
   reader.readAsText(file);
 }
+
+// ICS Calendar Export
+function exportToCalendar() {
+  const tasksWithDates = tasks.filter(task => task.dueDate && !task.completed);
+
+  if (tasksWithDates.length === 0) {
+    alert('No tasks with due dates to export.\n\nAdd due dates to tasks first, then export to calendar.');
+    return;
+  }
+
+  // Generate ICS file content
+  let icsContent = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//MedTodo//Medical Professional Todo List//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:MedTodo Tasks',
+    'X-WR-TIMEZONE:UTC'
+  ];
+
+  tasksWithDates.forEach(task => {
+    const eventId = task.id.replace(/-/g, '');
+    const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    // Parse due date and time
+    const dueDateTime = task.dueTime
+      ? new Date(`${task.dueDate}T${task.dueTime}`)
+      : new Date(`${task.dueDate}T09:00:00`); // Default to 9 AM if no time
+
+    const dtstart = dueDateTime.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    // End time: 1 hour after start for tasks with time, all-day for tasks without
+    const dtend = task.dueTime
+      ? new Date(dueDateTime.getTime() + 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+      : new Date(dueDateTime.getTime() + 24 * 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    // Build description
+    let description = task.notes || task.title;
+    if (task.category) description += `\\nCategory: ${task.category}`;
+    if (task.tag) description += `\\nTag: ${task.tag}`;
+    if (task.priority) description += `\\nPriority: ${task.priority}`;
+
+    // Escape special characters
+    description = description.replace(/\n/g, '\\n').replace(/,/g, '\\,');
+    const summary = task.title.replace(/,/g, '\\,').replace(/;/g, '\\;');
+
+    // Add event
+    icsContent.push('BEGIN:VEVENT');
+    icsContent.push(`UID:${eventId}@medtodo`);
+    icsContent.push(`DTSTAMP:${now}`);
+    icsContent.push(`DTSTART:${dtstart}`);
+    icsContent.push(`DTEND:${dtend}`);
+    icsContent.push(`SUMMARY:${summary}`);
+    icsContent.push(`DESCRIPTION:${description}`);
+    icsContent.push(`PRIORITY:${task.priority === 'high' ? '1' : task.priority === 'medium' ? '5' : '9'}`);
+    icsContent.push(`CATEGORIES:${task.category || 'Task'}`);
+
+    // Add alarm for high priority tasks (15 minutes before)
+    if (task.priority === 'high' && task.dueTime) {
+      icsContent.push('BEGIN:VALARM');
+      icsContent.push('TRIGGER:-PT15M');
+      icsContent.push('ACTION:DISPLAY');
+      icsContent.push(`DESCRIPTION:Reminder: ${summary}`);
+      icsContent.push('END:VALARM');
+    }
+
+    icsContent.push('END:VEVENT');
+  });
+
+  icsContent.push('END:VCALENDAR');
+
+  // Create and download file
+  const blob = new Blob([icsContent.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `medtodo-calendar-${new Date().toISOString().split('T')[0]}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  alert(`Exported ${tasksWithDates.length} tasks to calendar!\n\nOpen the downloaded .ics file to import into your calendar app.`);
+}
+
+// Get today's tasks sorted by time
+function getTodaysTasks() {
+  const today = new Date().toISOString().split('T')[0];
+  return tasks
+    .filter(task => task.dueDate === today && !task.completed)
+    .sort((a, b) => {
+      if (a.dueTime && b.dueTime) {
+        return a.dueTime.localeCompare(b.dueTime);
+      }
+      if (a.dueTime) return -1;
+      if (b.dueTime) return 1;
+      return 0;
+    });
+}
+
+// Get week's tasks grouped by day
+function getWeekTasks() {
+  const today = new Date();
+  const weekTasks = {};
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    const dateStr = date.toISOString().split('T')[0];
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+    weekTasks[dateStr] = {
+      dayName,
+      tasks: tasks
+        .filter(task => task.dueDate === dateStr && !task.completed)
+        .sort((a, b) => (a.dueTime || '').localeCompare(b.dueTime || ''))
+    };
+  }
+
+  return weekTasks;
+}
+
+// Render Today's Schedule
+function renderTodaySchedule() {
+  const todayTasks = getTodaysTasks();
+
+  if (todayTasks.length === 0) {
+    todaySchedule.innerHTML = '<p class="muted">No tasks scheduled for today.</p>';
+    todayCount.textContent = '';
+    return;
+  }
+
+  todayCount.textContent = `${todayTasks.length} task${todayTasks.length !== 1 ? 's' : ''}`;
+
+  todaySchedule.innerHTML = todayTasks.map(task => `
+    <div class="schedule-item">
+      <span class="schedule-time">${task.dueTime || 'No time'}</span>
+      <div class="schedule-task">
+        <span class="schedule-title">${task.title}</span>
+        <div class="schedule-meta">
+          <span class="badge badge-${task.category}">${task.category}</span>
+          <span class="badge badge-priority-${task.priority}">${task.priority}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Render Week View
+function renderWeekView() {
+  const weekTasks = getWeekTasks();
+  const entries = Object.entries(weekTasks);
+
+  const hasAnyTasks = entries.some(([_, data]) => data.tasks.length > 0);
+
+  if (!hasAnyTasks) {
+    weekView.innerHTML = '<p class="muted">No tasks scheduled this week.</p>';
+    return;
+  }
+
+  weekView.innerHTML = entries.map(([dateStr, data]) => {
+    if (data.tasks.length === 0) {
+      return `
+        <div class="week-day">
+          <div class="week-day-header">
+            <span class="week-day-name">${data.dayName}</span>
+            <span class="week-day-count muted">No tasks</span>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="week-day">
+        <div class="week-day-header">
+          <span class="week-day-name">${data.dayName}</span>
+          <span class="week-day-count">${data.tasks.length} task${data.tasks.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="week-day-tasks">
+          ${data.tasks.map(task => `
+            <div class="week-task">
+              <span class="week-task-time">${task.dueTime || '—'}</span>
+              <span class="week-task-title">${task.title}</span>
+              <span class="badge badge-priority-${task.priority}">${task.priority}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Calendar export event listener
+exportCalendarButton.addEventListener("click", exportToCalendar);
 
 // Initial render
 render();
