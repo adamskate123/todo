@@ -1,4 +1,10 @@
+import { saveTaskToFirestore, deleteTaskFromFirestore, syncLocalTasksToFirestore, getCurrentUser } from './auth.js';
+
 const STORAGE_KEY = "todo.tasks";
+
+// Sync mode: 'firebase' or 'offline'
+let syncMode = 'offline';
+let pendingSyncOperations = [];
 
 // Form elements
 const taskForm = document.querySelector("#task-form");
@@ -103,7 +109,7 @@ function saveTasks() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
 }
 
-function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recurrence }) {
+async function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recurrence }) {
   if (!title.trim()) {
     return;
   }
@@ -126,19 +132,56 @@ function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recu
   saveTasks();
   render();
 
+  // Sync to Firestore if in Firebase mode
+  if (syncMode === 'firebase') {
+    const result = await saveTaskToFirestore(task);
+    if (result.success) {
+      updateSyncStatus('synced');
+    } else {
+      updateSyncStatus('error');
+      // Queue for retry
+      queueSyncOperation('add', task);
+    }
+  }
+
   return task;
 }
 
-function updateTask(id, updates) {
+async function updateTask(id, updates) {
   tasks = tasks.map((task) => (task.id === id ? { ...task, ...updates } : task));
   saveTasks();
   render();
+
+  // Sync to Firestore if in Firebase mode
+  if (syncMode === 'firebase') {
+    const updatedTask = tasks.find(t => t.id === id);
+    if (updatedTask) {
+      const result = await saveTaskToFirestore(updatedTask);
+      if (result.success) {
+        updateSyncStatus('synced');
+      } else {
+        updateSyncStatus('error');
+        queueSyncOperation('update', updatedTask);
+      }
+    }
+  }
 }
 
-function deleteTask(id) {
+async function deleteTask(id) {
   tasks = tasks.filter((task) => task.id !== id);
   saveTasks();
   render();
+
+  // Sync to Firestore if in Firebase mode
+  if (syncMode === 'firebase') {
+    const result = await deleteTaskFromFirestore(id);
+    if (result.success) {
+      updateSyncStatus('synced');
+    } else {
+      updateSyncStatus('error');
+      queueSyncOperation('delete', { id });
+    }
+  }
 }
 
 function clearCompleted() {
@@ -709,6 +752,124 @@ clearDateFilterButton.addEventListener("click", () => {
   activeDate = "";
   calendarDate.value = "";
   render();
+});
+
+// Sync helper functions
+function updateSyncStatus(status) {
+  const syncStatus = document.getElementById('sync-status');
+  if (!syncStatus) return;
+
+  if (status === 'synced') {
+    syncStatus.textContent = '✓ Synced';
+    syncStatus.className = 'sync-status synced';
+    setTimeout(() => {
+      syncStatus.textContent = '';
+    }, 2000);
+  } else if (status === 'syncing') {
+    syncStatus.textContent = '⟳ Syncing...';
+    syncStatus.className = 'sync-status syncing';
+  } else if (status === 'error') {
+    syncStatus.textContent = '⚠ Sync error';
+    syncStatus.className = 'sync-status error';
+  } else if (status === 'offline') {
+    syncStatus.textContent = 'Offline';
+    syncStatus.className = 'sync-status offline';
+  }
+}
+
+function queueSyncOperation(operation, data) {
+  pendingSyncOperations.push({ operation, data, timestamp: Date.now() });
+  localStorage.setItem('pendingSync', JSON.stringify(pendingSyncOperations));
+}
+
+async function processPendingSyncOperations() {
+  if (pendingSyncOperations.length === 0 || syncMode !== 'firebase') return;
+
+  updateSyncStatus('syncing');
+
+  for (const op of [...pendingSyncOperations]) {
+    let result;
+    if (op.operation === 'add' || op.operation === 'update') {
+      result = await saveTaskToFirestore(op.data);
+    } else if (op.operation === 'delete') {
+      result = await deleteTaskFromFirestore(op.data.id);
+    }
+
+    if (result.success) {
+      // Remove from queue
+      pendingSyncOperations = pendingSyncOperations.filter(o => o !== op);
+    }
+  }
+
+  localStorage.setItem('pendingSync', JSON.stringify(pendingSyncOperations));
+
+  if (pendingSyncOperations.length === 0) {
+    updateSyncStatus('synced');
+  } else {
+    updateSyncStatus('error');
+  }
+}
+
+// Auth event listeners
+window.addEventListener('userSignedIn', async (event) => {
+  syncMode = 'firebase';
+  updateSyncStatus('syncing');
+
+  // Load pending sync operations
+  const pendingStr = localStorage.getItem('pendingSync');
+  if (pendingStr) {
+    try {
+      pendingSyncOperations = JSON.parse(pendingStr);
+    } catch (e) {
+      pendingSyncOperations = [];
+    }
+  }
+
+  // Sync local tasks to Firestore on first sign in
+  const localTasks = loadTasks();
+  if (localTasks.length > 0) {
+    const result = await syncLocalTasksToFirestore(localTasks);
+    if (!result.success) {
+      console.error('Failed to sync local tasks:', result.error);
+    }
+  }
+
+  // Process any pending sync operations
+  await processPendingSyncOperations();
+});
+
+window.addEventListener('userSignedOut', () => {
+  syncMode = 'offline';
+  updateSyncStatus('offline');
+});
+
+window.addEventListener('offlineMode', () => {
+  syncMode = 'offline';
+  updateSyncStatus('offline');
+});
+
+window.addEventListener('tasksSynced', (event) => {
+  // Tasks synced from Firestore
+  const syncedTasks = event.detail.tasks;
+
+  // Merge with local tasks (Firestore is source of truth)
+  tasks = syncedTasks;
+  saveTasks();
+  render();
+  updateSyncStatus('synced');
+});
+
+// Online/offline detection
+window.addEventListener('online', () => {
+  if (syncMode === 'firebase') {
+    processPendingSyncOperations();
+  }
+});
+
+window.addEventListener('offline', () => {
+  if (syncMode === 'firebase') {
+    updateSyncStatus('offline');
+  }
 });
 
 // Initial render

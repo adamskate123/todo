@@ -1,8 +1,11 @@
-const CACHE_NAME = 'medtodo-v1';
+const CACHE_NAME = 'medtodo-v2';
 const urlsToCache = [
   './',
   './index.html',
   './app.js',
+  './auth.js',
+  './auth-ui.js',
+  './firebase-config.js',
   './styles.css',
   './manifest.json',
   './icon.svg'
