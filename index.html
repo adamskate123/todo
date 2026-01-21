@@ -22,7 +22,7 @@
       <header class="app__header">
         <div>
           <h1>Todo List</h1>
-          <p>Track tasks in your browser and sync with Obsidian using Markdown checklists.</p>
+          <p>Track tasks across devices with cloud storage sync.</p>
         </div>
         <div class="app__meta">
           <span id="task-count">0 tasks</span>
@@ -136,6 +136,26 @@
               <button class="template-btn secondary" data-template="research-review">Research Paper Review</button>
               <button class="template-btn secondary" data-template="conference-prep">Conference Prep</button>
               <button class="template-btn secondary" data-template="family-event">Family Event</button>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h2>Cloud Storage Sync</h2>
+            </div>
+            <p class="muted">
+              Backup and sync your tasks across devices using Dropbox, Google Drive, or iCloud.
+              Export your tasks, save to cloud storage, then import on other devices.
+            </p>
+            <div class="card__actions">
+              <button id="export-json" class="primary">Download Backup</button>
+              <button id="import-json-btn" class="secondary">Restore from Backup</button>
+              <input type="file" id="import-json-file" accept=".json" style="display: none;" />
+            </div>
+            <div class="backup-info">
+              <p class="muted" style="margin-top: 12px; font-size: 0.85rem;">
+                💡 <strong>Pro tip:</strong> Save backups to Dropbox/Google Drive for automatic cross-device sync
+              </p>
             </div>
           </section>
 

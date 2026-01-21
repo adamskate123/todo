@@ -33,6 +33,11 @@ const exportMarkdownButton = document.querySelector("#export-markdown");
 const importMarkdownButton = document.querySelector("#import-markdown");
 const copyMarkdownButton = document.querySelector("#copy-markdown");
 
+// JSON Export/Import
+const exportJsonButton = document.querySelector("#export-json");
+const importJsonButton = document.querySelector("#import-json-btn");
+const importJsonFile = document.querySelector("#import-json-file");
+
 // Calendar
 const calendarDate = document.querySelector("#calendar-date");
 const clearDateFilterButton = document.querySelector("#clear-date-filter");
@@ -678,6 +683,11 @@ exportMarkdownButton.addEventListener("click", exportMarkdown);
 importMarkdownButton.addEventListener("click", importMarkdown);
 copyMarkdownButton.addEventListener("click", copyMarkdown);
 
+// JSON export/import
+exportJsonButton.addEventListener("click", exportJson);
+importJsonButton.addEventListener("click", () => importJsonFile.click());
+importJsonFile.addEventListener("change", importJson);
+
 // Quick capture
 quickCaptureBtn.addEventListener("click", handleQuickCapture);
 quickCaptureInput.addEventListener("keypress", (e) => {
@@ -710,6 +720,69 @@ clearDateFilterButton.addEventListener("click", () => {
   calendarDate.value = "";
   render();
 });
+
+// JSON Export/Import Functions
+function exportJson() {
+  const dataStr = JSON.stringify({
+    tasks: tasks,
+    exportDate: new Date().toISOString(),
+    version: "1.0"
+  }, null, 2);
+
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `medtodo-backup-${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function importJson(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+
+      if (data.tasks && Array.isArray(data.tasks)) {
+        // Ask user if they want to merge or replace
+        const shouldMerge = confirm(
+          `Found ${data.tasks.length} tasks in backup.\n\n` +
+          `Click OK to MERGE with existing tasks (${tasks.length}).\n` +
+          `Click Cancel to REPLACE all existing tasks.`
+        );
+
+        if (shouldMerge) {
+          // Merge: Add imported tasks, avoiding duplicates by ID
+          const existingIds = new Set(tasks.map(t => t.id));
+          const newTasks = data.tasks.filter(t => !existingIds.has(t.id));
+          tasks = [...tasks, ...newTasks];
+        } else {
+          // Replace: Use imported tasks
+          tasks = data.tasks;
+        }
+
+        saveTasks();
+        render();
+        alert(`Successfully imported ${data.tasks.length} tasks!`);
+      } else {
+        alert('Invalid backup file format.');
+      }
+    } catch (error) {
+      alert('Error reading backup file: ' + error.message);
+    }
+
+    // Reset file input
+    event.target.value = '';
+  };
+
+  reader.readAsText(file);
+}
 
 // Initial render
 render();
