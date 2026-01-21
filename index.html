@@ -161,6 +161,43 @@
 
           <section class="card">
             <div class="card__header">
+              <h2>Calendar Integration</h2>
+            </div>
+            <p class="muted">
+              Export tasks with due dates to your calendar app (Google Calendar, Outlook, Apple Calendar).
+              High-priority tasks include automatic reminders.
+            </p>
+            <div class="card__actions">
+              <button id="export-calendar" class="primary">Export to Calendar (.ics)</button>
+            </div>
+            <div class="backup-info">
+              <p class="muted" style="margin-top: 12px; font-size: 0.85rem;">
+                📅 <strong>Tip:</strong> Open the downloaded .ics file to automatically import events into your calendar
+              </p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h2>Today's Schedule</h2>
+              <span id="today-count" class="muted" style="font-size: 0.9rem;"></span>
+            </div>
+            <div id="today-schedule" class="today-schedule">
+              <p class="muted">No tasks scheduled for today.</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h2>This Week</h2>
+            </div>
+            <div id="week-view" class="week-view">
+              <p class="muted">No tasks scheduled this week.</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
               <h2>Obsidian Integration</h2>
               <button id="export-markdown" class="secondary">Export to Markdown</button>
             </div>

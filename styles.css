@@ -643,3 +643,159 @@ input[type="checkbox"] {
   margin-top: 8px;
 }
 
+/* Today's Schedule */
+.today-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.schedule-item {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.schedule-item:hover {
+  background: var(--secondary);
+  border-color: var(--primary);
+}
+
+.schedule-time {
+  font-weight: 600;
+  color: var(--primary);
+  font-size: 0.9rem;
+  text-align: right;
+  padding-top: 2px;
+}
+
+.schedule-task {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.schedule-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.schedule-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.schedule-meta .badge {
+  font-size: 0.75rem;
+  padding: 3px 8px;
+}
+
+/* Week View */
+.week-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.week-day {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 12px;
+  background: transparent;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.week-day:hover {
+  background: var(--secondary);
+}
+
+.week-day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.week-day-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.week-day-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.week-day-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.week-task {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--bg);
+  align-items: center;
+}
+
+.week-task-time {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.week-task-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.week-task .badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+}
+
+/* Mobile adjustments for calendar views */
+@media (max-width: 600px) {
+  .schedule-item {
+    grid-template-columns: 70px 1fr;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .schedule-time {
+    font-size: 0.85rem;
+  }
+
+  .schedule-title {
+    font-size: 0.9rem;
+  }
+
+  .week-task {
+    grid-template-columns: 50px 1fr auto;
+    gap: 8px;
+    padding: 6px;
+  }
+
+  .week-task-time {
+    font-size: 0.75rem;
+  }
+
+  .week-task-title {
+    font-size: 0.85rem;
+  }
+}
+
