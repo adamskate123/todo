@@ -28,6 +28,36 @@ A versatile, mobile-first Progressive Web App (PWA) designed for busy profession
 - **Search & Filter**: Find tasks by keyword, category, status, or date
 - **Obsidian Integration**: Export/import Markdown checklists for note-taking sync
 
+## 🔄 Device Sync
+
+Tasks are stored locally and can sync across your devices. The app encrypts them
+in the browser before uploading, so the server only ever holds ciphertext.
+
+**Tasks in the Clinical category are never uploaded** — they stay only on the
+device that created them.
+
+See **[SYNC_SETUP.md](SYNC_SETUP.md)** for step-by-step setup (about five
+minutes, once).
+
+> The encryption protects data at rest on the server. It does not protect
+> against someone using your already-unlocked device. GitHub does not sign
+> Business Associate Agreements; check with your institution's privacy office
+> before syncing anything patient-identifiable.
+
+## 🧪 Tests
+
+No dependencies and no build step:
+
+```bash
+npm test          # or: node test/app.test.js && node test/sync.test.js
+```
+
+The suites evaluate the real `app.js` and `sync.js` against a DOM stub and a
+frozen clock, so they exercise the shipping files rather than copies of their
+logic. They cover local-vs-UTC date handling, merge and tombstone semantics,
+markup-safe rendering, and the guarantee that clinical tasks never reach the
+network.
+
 ## 🚀 Quick Start
 
 ### Installation Options

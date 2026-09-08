@@ -139,23 +139,66 @@
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" id="sync-card">
             <div class="card__header">
-              <h2>Cloud Storage Sync</h2>
+              <h2>Device Sync</h2>
+              <span id="sync-status" class="sync-status"></span>
             </div>
             <p class="muted">
-              Backup and sync your tasks across devices using Dropbox, Google Drive, or iCloud.
-              Export your tasks, save to cloud storage, then import on other devices.
+              Tasks are encrypted on this device before anything is uploaded, so the
+              server only ever holds ciphertext it cannot read.
+              <strong>Clinical tasks are never uploaded</strong> &mdash; they stay only on
+              the device that created them.
+            </p>
+
+            <div id="sync-setup">
+              <div class="form-row">
+                <label class="field">GitHub username
+                  <input id="sync-owner" type="text" autocomplete="off" placeholder="e.g. adamskate123" />
+                </label>
+                <label class="field">Private repo name
+                  <input id="sync-repo" type="text" autocomplete="off" placeholder="e.g. medtodo-sync" />
+                </label>
+              </div>
+              <div class="form-row">
+                <label class="field">Access token
+                  <input id="sync-token" type="password" autocomplete="off" placeholder="github_pat_&hellip;" />
+                </label>
+                <label class="field">Passphrase
+                  <input id="sync-passphrase" type="password" autocomplete="off" placeholder="Same on every device" />
+                </label>
+              </div>
+              <p class="muted" style="font-size: 0.85rem;">
+                The passphrase never leaves this device and cannot be reset. If you lose
+                it, the synced data cannot be recovered.
+              </p>
+              <div class="card__actions">
+                <button id="sync-connect" class="primary" type="button">Connect this device</button>
+              </div>
+            </div>
+
+            <div id="sync-connected" hidden>
+              <p class="muted" id="sync-target"></p>
+              <div class="card__actions">
+                <button id="sync-now" class="primary" type="button">Sync now</button>
+                <button id="sync-disconnect" class="danger" type="button">Disconnect this device</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h2>Manual Backup</h2>
+            </div>
+            <p class="muted">
+              A plain, unencrypted copy of every task, including clinical ones. Useful as
+              an offline archive &mdash; keep it somewhere you would be comfortable storing
+              patient information.
             </p>
             <div class="card__actions">
               <button id="export-json" class="primary">Download Backup</button>
               <button id="import-json-btn" class="secondary">Restore from Backup</button>
               <input type="file" id="import-json-file" accept=".json" style="display: none;" />
-            </div>
-            <div class="backup-info">
-              <p class="muted" style="margin-top: 12px; font-size: 0.85rem;">
-                💡 <strong>Pro tip:</strong> Save backups to Dropbox/Google Drive for automatic cross-device sync
-              </p>
             </div>
           </section>
 
@@ -302,6 +345,7 @@
     </div>
 
     <script src="app.js"></script>
+    <script src="sync.js"></script>
     <script>
       // Register service worker for PWA
       if ('serviceWorker' in navigator) {

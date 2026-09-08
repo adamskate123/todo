@@ -214,6 +214,10 @@ function saveTasks() {
     STORAGE_KEY,
     JSON.stringify({ version: SCHEMA_VERSION, tasks })
   );
+  // Debounced; a no-op until sync is configured.
+  if (window.MedTodoSync) {
+    window.MedTodoSync.scheduleAutosync();
+  }
 }
 
 // Everything the user should actually see. Tombstones stay in `tasks` for sync
@@ -1287,5 +1291,19 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// Bridge for sync.js, which is loaded after this file. `tasks` is a module-level
+// `let`, so it is not reachable from another script without an explicit accessor.
+window.MedTodoStore = {
+  getTasks: () => tasks,
+  setTasks(next) {
+    tasks = next.map(normalizeTask);
+    saveTasks();
+    render();
+  },
+  mergeTaskLists,
+  normalizeTask,
+};
+
 // Initial render
 render();
+

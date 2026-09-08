@@ -916,3 +916,35 @@ input[type="checkbox"] {
   }
 }
 
+
+/* Device sync */
+.sync-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.sync-status--ok {
+  color: var(--success);
+}
+
+.sync-status--error {
+  color: var(--danger);
+}
+
+.sync-status--syncing {
+  color: var(--primary);
+}
+
+#sync-card .form-row {
+  margin-top: 8px;
+}
+
+#sync-card input[type="password"],
+#sync-card input[type="text"] {
+  font-family: inherit;
+}
+
+#sync-target {
+  margin-top: 4px;
+}
