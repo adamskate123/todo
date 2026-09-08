@@ -22,30 +22,97 @@
       <header class="app__header">
         <div>
           <h1>Todo List</h1>
-          <p>Track tasks across devices with cloud storage sync.</p>
+          <p>Clinical, academic, and home tasks in one place.</p>
         </div>
         <div class="app__meta">
-          <span id="task-count">0 tasks</span>
+          <span id="sync-status" class="sync-status"></span>
           <button id="clear-completed" class="secondary">Clear completed</button>
         </div>
       </header>
 
       <div class="layout">
         <main class="main">
-          <section class="card">
-            <div class="card__header">
-              <h2>Quick Capture</h2>
-            </div>
-            <p class="muted">
-              Just type naturally! Examples: "Call Dr. Smith tomorrow 2pm #urgent !high clinical" or "Review paper next monday work" or "Meeting in 3 days 3pm note: bring slides"
-            </p>
+          <section class="card card--capture">
             <div class="quick-capture">
-              <input id="quick-capture-input" type="text" placeholder="e.g., Call Dr. Smith next friday 2pm #urgent !! clinical" />
-              <button id="quick-capture-btn" class="primary">Quick Add</button>
+              <input id="quick-capture-input" type="text"
+                     placeholder="Add a task&hellip; e.g. Call Dr. Smith next friday 2pm #urgent !high clinical" />
+              <button id="quick-capture-btn" class="primary">Add</button>
             </div>
+            <p class="muted capture-hint" id="capture-hint">
+              Type naturally: a date (<em>tomorrow</em>, <em>next monday</em>, <em>in 3 days</em>),
+              a time (<em>2pm</em>), <em>#tag</em>, <em>!high</em>, and a category.
+            </p>
           </section>
 
           <section class="card">
+            <div class="card__header">
+              <h2>Schedule</h2>
+              <span id="task-count" class="muted">0 tasks</span>
+            </div>
+
+            <div class="tabs" role="tablist" aria-label="Task views">
+              <button class="tab active" type="button" role="tab" aria-selected="true" data-view="today">
+                Today <span id="today-count" class="tab__count"></span>
+              </button>
+              <button class="tab" type="button" role="tab" aria-selected="false" data-view="week">
+                Week <span id="week-count" class="tab__count"></span>
+              </button>
+              <button class="tab" type="button" role="tab" aria-selected="false" data-view="all">
+                All
+              </button>
+            </div>
+
+            <div class="view" data-panel="today">
+              <div id="today-schedule" class="today-schedule">
+                <p class="muted">No tasks scheduled for today.</p>
+              </div>
+            </div>
+
+            <div class="view" data-panel="week" hidden>
+              <div id="week-view" class="week-view">
+                <p class="muted">No tasks scheduled this week.</p>
+              </div>
+            </div>
+
+            <div class="view" data-panel="all" hidden>
+              <div class="filter-row">
+                <div class="filters" role="group" aria-label="Filter tasks">
+                  <button class="filter active" type="button" data-filter="all">All</button>
+                  <button class="filter" type="button" data-filter="active">Active</button>
+                  <button class="filter" type="button" data-filter="completed">Completed</button>
+                </div>
+                <input id="search-input" type="search" placeholder="Search tasks" />
+              </div>
+              <div class="filter-row">
+                <div class="category-filters" role="group" aria-label="Filter by category">
+                  <button class="category-filter active" type="button" data-category="">All</button>
+                  <button class="category-filter" type="button" data-category="work">Work</button>
+                  <button class="category-filter" type="button" data-category="home">Home</button>
+                  <button class="category-filter" type="button" data-category="research">Research</button>
+                  <button class="category-filter" type="button" data-category="clinical">Clinical</button>
+                  <button class="category-filter" type="button" data-category="teaching">Teaching</button>
+                </div>
+              </div>
+              <div class="filter-row filter-row--date">
+                <label class="field field--inline">
+                  <span>Jump to date</span>
+                  <input id="calendar-date" type="date" />
+                </label>
+                <button id="clear-date-filter" class="secondary" type="button">Clear date</button>
+              </div>
+              <ul id="task-list" class="task-list"></ul>
+            </div>
+          </section>
+
+          <details class="card card--tool">
+            <summary class="tool__summary">Add with all fields</summary>
+            <p class="muted">Start from a template, or fill in everything by hand.</p>
+            <div class="template-buttons">
+              <button class="template-btn secondary" type="button" data-template="patient-referral">New Patient Referral</button>
+              <button class="template-btn secondary" type="button" data-template="research-review">Research Paper Review</button>
+              <button class="template-btn secondary" type="button" data-template="conference-prep">Conference Prep</button>
+              <button class="template-btn secondary" type="button" data-template="family-event">Family Event</button>
+            </div>
             <form id="task-form" autocomplete="off">
               <label class="field">
                 <span>New task</span>
@@ -100,49 +167,11 @@
                 <button type="submit" class="primary">Add task</button>
               </div>
             </form>
-          </section>
-
-          <section class="card">
-            <div class="filter-row">
-              <div class="filters" role="group" aria-label="Filter tasks">
-                <button class="filter active" data-filter="all">All</button>
-                <button class="filter" data-filter="active">Active</button>
-                <button class="filter" data-filter="completed">Completed</button>
-              </div>
-              <input id="search-input" type="search" placeholder="Search tasks" />
-            </div>
-            <div class="filter-row">
-              <div class="category-filters" role="group" aria-label="Filter by category">
-                <button class="category-filter active" data-category="">All Categories</button>
-                <button class="category-filter" data-category="work">Work</button>
-                <button class="category-filter" data-category="home">Home</button>
-                <button class="category-filter" data-category="research">Research</button>
-                <button class="category-filter" data-category="clinical">Clinical</button>
-                <button class="category-filter" data-category="teaching">Teaching</button>
-              </div>
-            </div>
-            <ul id="task-list" class="task-list"></ul>
-          </section>
-
-          <section class="card">
-            <div class="card__header">
-              <h2>Task Templates</h2>
-            </div>
-            <p class="muted">
-              Pre-configured templates for common tasks.
-            </p>
-            <div class="template-buttons">
-              <button class="template-btn secondary" data-template="patient-referral">New Patient Referral</button>
-              <button class="template-btn secondary" data-template="research-review">Research Paper Review</button>
-              <button class="template-btn secondary" data-template="conference-prep">Conference Prep</button>
-              <button class="template-btn secondary" data-template="family-event">Family Event</button>
-            </div>
-          </section>
+          </details>
 
           <section class="card" id="sync-card">
             <div class="card__header">
               <h2>Device Sync</h2>
-              <span id="sync-status" class="sync-status"></span>
             </div>
             <p class="muted">
               Tasks are encrypted on this device before anything is uploaded, so the
@@ -171,6 +200,7 @@
               <p class="muted" style="font-size: 0.85rem;">
                 The passphrase never leaves this device and cannot be reset. If you lose
                 it, the synced data cannot be recovered.
+                <a href="SYNC_SETUP.md">Setup instructions</a>
               </p>
               <div class="card__actions">
                 <button id="sync-connect" class="primary" type="button">Connect this device</button>
@@ -186,92 +216,53 @@
             </div>
           </section>
 
-          <section class="card">
-            <div class="card__header">
-              <h2>Manual Backup</h2>
-            </div>
+          <details class="card card--tool">
+            <summary class="tool__summary">Calendar export</summary>
             <p class="muted">
-              A plain, unencrypted copy of every task, including clinical ones. Useful as
-              an offline archive &mdash; keep it somewhere you would be comfortable storing
-              patient information.
+              Export tasks with due dates to Google Calendar, Outlook, or Apple Calendar.
+              High-priority tasks include a 15-minute reminder.
             </p>
             <div class="card__actions">
-              <button id="export-json" class="primary">Download Backup</button>
-              <button id="import-json-btn" class="secondary">Restore from Backup</button>
-              <input type="file" id="import-json-file" accept=".json" style="display: none;" />
+              <button id="export-calendar" class="primary" type="button">Export to Calendar (.ics)</button>
             </div>
-          </section>
+          </details>
 
-          <section class="card">
-            <div class="card__header">
-              <h2>Calendar Integration</h2>
-            </div>
+          <details class="card card--tool">
+            <summary class="tool__summary">Obsidian (Markdown)</summary>
             <p class="muted">
-              Export tasks with due dates to your calendar app (Google Calendar, Outlook, Apple Calendar).
-              High-priority tasks include automatic reminders.
+              Export a Markdown checklist for an Obsidian note, or paste one in to import.
             </p>
             <div class="card__actions">
-              <button id="export-calendar" class="primary">Export to Calendar (.ics)</button>
+              <button id="export-markdown" class="secondary" type="button">Export to Markdown</button>
             </div>
-            <div class="backup-info">
-              <p class="muted" style="margin-top: 12px; font-size: 0.85rem;">
-                📅 <strong>Tip:</strong> Open the downloaded .ics file to automatically import events into your calendar
-              </p>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card__header">
-              <h2>Today's Schedule</h2>
-              <span id="today-count" class="muted" style="font-size: 0.9rem;"></span>
-            </div>
-            <div id="today-schedule" class="today-schedule">
-              <p class="muted">No tasks scheduled for today.</p>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card__header">
-              <h2>This Week</h2>
-            </div>
-            <div id="week-view" class="week-view">
-              <p class="muted">No tasks scheduled this week.</p>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card__header">
-              <h2>Obsidian Integration</h2>
-              <button id="export-markdown" class="secondary">Export to Markdown</button>
-            </div>
-            <p class="muted">
-              Use Markdown checklists to sync with Obsidian. Paste a checklist below and import it,
-              or copy the exported list into an Obsidian note.
-            </p>
             <textarea id="markdown-area" rows="8" placeholder="- [ ] Example task"></textarea>
             <div class="card__actions">
-              <button id="import-markdown" class="primary">Import from Markdown</button>
-              <button id="copy-markdown" class="secondary">Copy to clipboard</button>
+              <button id="import-markdown" class="primary" type="button">Import from Markdown</button>
+              <button id="copy-markdown" class="secondary" type="button">Copy to clipboard</button>
             </div>
-          </section>
-        </main>
+          </details>
 
-        <aside class="sidebar">
-          <section class="card calendar">
-            <div class="card__header">
-              <h2>Calendar</h2>
-              <button id="clear-date-filter" class="secondary">Clear date</button>
+          <details class="card card--tool">
+            <summary class="tool__summary">Manual backup</summary>
+            <p class="muted">
+              A plain, <strong>unencrypted</strong> copy of every task, clinical ones
+              included. Keep it somewhere you would be comfortable storing patient
+              information.
+            </p>
+            <div class="card__actions">
+              <button id="export-json" class="primary" type="button">Download Backup</button>
+              <button id="import-json-btn" class="secondary" type="button">Restore from Backup</button>
+              <input type="file" id="import-json-file" accept=".json" style="display: none;" />
             </div>
-            <label class="field">
-              <span>Pick a date</span>
-              <input id="calendar-date" type="date" />
-            </label>
-            <p class="muted" id="calendar-summary">No date selected.</p>
-            <p class="muted" id="calendar-empty">No due dates yet. Add one to see it here.</p>
-            <ul id="calendar-list" class="calendar-list"></ul>
-          </section>
-        </aside>
+          </details>
+        </main>
       </div>
+    </div>
+
+    <!-- Undo toast -->
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+      <span id="toast-message"></span>
+      <button id="toast-action" class="toast__action" type="button">Undo</button>
     </div>
 
     <!-- Floating Quick Add Button -->

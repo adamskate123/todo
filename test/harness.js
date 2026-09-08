@@ -67,6 +67,7 @@ class StubElement {
     this.textContent = "";
     this.value = "";
     this.checked = false;
+    this.hidden = false;
     this.style = {};
     this.dataset = {};
     this.classList = { add() {}, remove() {}, toggle() {} };
@@ -147,6 +148,12 @@ function loadApp(nowIso, seededTasks) {
     parseInt,
     parseFloat,
     crypto: { randomUUID: () => `id-${++idCounter}` },
+    setTimeout: (fn, ms) => {
+      const timer = setTimeout(fn, ms);
+      if (timer && typeof timer.unref === "function") timer.unref();
+      return timer;
+    },
+    clearTimeout,
     localStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
@@ -182,6 +189,9 @@ function loadApp(nowIso, seededTasks) {
       mergeTaskLists, liveTasks, getTodaysTasks, getWeekTasks,
       addTask, deleteTask, updateTask, clearCompleted,
       renderTodaySchedule, renderWeekView, calculateNextDate,
+      renderTaskList, renderCounts, setActiveView, undoDelete, showUndo,
+      handleClearCompleted,
+      getActiveView: () => activeView,
       setTasks: (t) => { tasks = t; },
       getTasks: () => tasks,
     };
@@ -197,14 +207,6 @@ function loadAppWithSync(nowIso, seededTasks, fetchImpl) {
   const app = loadApp(nowIso, seededTasks);
   const context = app.context;
   context.fetch = fetchImpl || (() => Promise.reject(new Error("no fetch stub")));
-  // Unref'd so the autosync debounce timer cannot hold the process open after
-  // the assertions have finished.
-  context.setTimeout = (fn, ms) => {
-    const timer = setTimeout(fn, ms);
-    if (timer && typeof timer.unref === "function") timer.unref();
-    return timer;
-  };
-  context.clearTimeout = clearTimeout;
   context.btoa = (s) => Buffer.from(s, "binary").toString("base64");
   context.atob = (s) => Buffer.from(s, "base64").toString("binary");
   context.TextEncoder = TextEncoder;

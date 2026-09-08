@@ -53,12 +53,19 @@ const todaySchedule = document.querySelector("#today-schedule");
 const todayCount = document.querySelector("#today-count");
 const weekView = document.querySelector("#week-view");
 
-// Calendar
+// Date filter
 const calendarDate = document.querySelector("#calendar-date");
 const clearDateFilterButton = document.querySelector("#clear-date-filter");
-const calendarList = document.querySelector("#calendar-list");
-const calendarSummary = document.querySelector("#calendar-summary");
-const calendarEmpty = document.querySelector("#calendar-empty");
+
+// View tabs
+const tabButtons = document.querySelectorAll(".tab");
+const viewPanels = document.querySelectorAll(".view");
+const weekCount = document.querySelector("#week-count");
+
+// Undo toast
+const toast = document.querySelector("#toast");
+const toastMessage = document.querySelector("#toast-message");
+const toastAction = document.querySelector("#toast-action");
 
 // Edit modal
 const editModal = document.querySelector("#edit-modal");
@@ -77,6 +84,7 @@ const editRecurrence = document.querySelector("#edit-recurrence");
 // State
 let tasks = loadTasks();
 let activeFilter = "all";
+let activeView = "today";
 let activeCategory = "";
 let activeDate = "";
 let currentEditingTaskId = null;
@@ -390,7 +398,7 @@ function sortTasks(list) {
   });
 }
 
-function render() {
+function renderTaskList() {
   const visibleTasks = sortTasks(filterTasks(liveTasks()));
   taskList.innerHTML = "";
 
@@ -464,7 +472,10 @@ function render() {
     const deleteButton = document.createElement("button");
     deleteButton.className = "danger";
     deleteButton.textContent = "Delete";
-    deleteButton.addEventListener("click", () => deleteTask(task.id));
+    deleteButton.addEventListener("click", () => {
+      deleteTask(task.id);
+      showUndo(`Deleted "${task.title}"`, [task.id]);
+    });
 
     actions.append(editButton, deleteButton);
 
@@ -472,7 +483,9 @@ function render() {
     taskList.append(listItem);
   });
 
-  // Update task count with category breakdown
+}
+
+function renderCounts() {
   const counted = liveTasks();
   const categoryStats = counted.reduce((acc, task) => {
     acc[task.category] = (acc[task.category] || 0) + 1;
@@ -486,9 +499,38 @@ function render() {
   }
   taskCount.textContent = countText;
 
-  renderCalendar();
-  renderTodaySchedule();
-  renderWeekView();
+  const todayTotal = getTodaysTasks().length;
+  todayCount.textContent = todayTotal ? String(todayTotal) : "";
+
+  const weekTotal = Object.values(getWeekTasks())
+    .reduce((sum, day) => sum + day.tasks.length, 0);
+  if (weekCount) weekCount.textContent = weekTotal ? String(weekTotal) : "";
+}
+
+// Only the visible panel is rebuilt. Searching used to re-render every view on
+// each keystroke, which is what made large lists feel sluggish.
+function render() {
+  renderCounts();
+  if (activeView === "today") {
+    renderTodaySchedule();
+  } else if (activeView === "week") {
+    renderWeekView();
+  } else {
+    renderTaskList();
+  }
+}
+
+function setActiveView(view) {
+  activeView = view;
+  tabButtons.forEach((button) => {
+    const selected = button.dataset.view === view;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  viewPanels.forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== view;
+  });
+  render();
 }
 
 function startEdit(task) {
@@ -874,7 +916,7 @@ function handleFilterClick(event) {
   filterButtons.forEach((button) => button.classList.remove("active"));
   target.classList.add("active");
   activeFilter = target.dataset.filter || "all";
-  render();
+  setActiveView("all");
 }
 
 function handleCategoryFilterClick(event) {
@@ -885,57 +927,50 @@ function handleCategoryFilterClick(event) {
   categoryFilterButtons.forEach((button) => button.classList.remove("active"));
   target.classList.add("active");
   activeCategory = target.dataset.category || "";
-  render();
+  setActiveView("all");
 }
 
-function renderCalendar() {
-  const withDueDates = liveTasks()
-    .filter((task) => task.dueDate)
-    .slice()
-    .sort((a, b) => {
-      const dateCompare = a.dueDate.localeCompare(b.dueDate);
-      if (dateCompare !== 0) return dateCompare;
-      return (a.dueTime || "").localeCompare(b.dueTime || "");
-    });
 
-  calendarEmpty.style.display = withDueDates.length ? "none" : "block";
-  const upcoming = withDueDates.reduce((acc, task) => {
-    acc[task.dueDate] = acc[task.dueDate] || [];
-    acc[task.dueDate].push(task);
-    return acc;
-  }, {});
+// --- Undo -------------------------------------------------------------------
+// Deletes are tombstones rather than removals, so undo is just clearing the
+// flag. A new updatedAt makes the restore win over the delete on other devices.
+let undoIds = [];
+let undoTimer = null;
 
-  calendarList.innerHTML = "";
+function showUndo(message, ids) {
+  if (!toast) return;
+  undoIds = ids;
+  toastMessage.textContent = message;
+  toast.hidden = false;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo, 8000);
+}
 
-  Object.entries(upcoming).forEach(([date, dateTasks]) => {
-    const item = document.createElement("li");
-    const title = document.createElement("span");
-    title.textContent = date;
-    const detail = document.createElement("small");
+function hideUndo() {
+  if (!toast) return;
+  toast.hidden = true;
+  undoIds = [];
+}
 
-    // Show time range if tasks have times
-    const withTimes = dateTasks.filter(t => t.dueTime);
-    if (withTimes.length > 0) {
-      detail.textContent = `${dateTasks.length} task${dateTasks.length !== 1 ? "s" : ""} (${withTimes[0].dueTime}${withTimes.length > 1 ? '...' : ''})`;
-    } else {
-      detail.textContent = `${dateTasks.length} task${dateTasks.length !== 1 ? "s" : ""}`;
-    }
+function undoDelete() {
+  if (!undoIds.length) return;
+  const now = new Date().toISOString();
+  const ids = new Set(undoIds);
+  tasks = tasks.map((task) =>
+    ids.has(task.id)
+      ? { ...task, deleted: false, deletedAt: "", updatedAt: now }
+      : task
+  );
+  saveTasks();
+  render();
+  hideUndo();
+}
 
-    item.append(title, detail);
-    item.addEventListener("click", () => {
-      activeDate = date;
-      calendarDate.value = date;
-      render();
-    });
-    calendarList.append(item);
-  });
-
-  if (!activeDate) {
-    calendarSummary.textContent = "No date selected.";
-  } else {
-    const count = tasks.filter((task) => task.dueDate === activeDate).length;
-    calendarSummary.textContent = `Showing ${count} task${count !== 1 ? "s" : ""} due on ${activeDate}.`;
-  }
+function handleClearCompleted() {
+  const ids = liveTasks().filter((task) => task.completed).map((task) => task.id);
+  if (!ids.length) return;
+  clearCompleted();
+  showUndo(`Cleared ${ids.length} completed task${ids.length !== 1 ? "s" : ""}`, ids);
 }
 
 // Event listeners
@@ -958,8 +993,21 @@ taskForm.addEventListener("submit", (event) => {
 
 filterButtons.forEach((button) => button.addEventListener("click", handleFilterClick));
 categoryFilterButtons.forEach((button) => button.addEventListener("click", handleCategoryFilterClick));
-searchInput.addEventListener("input", render);
-clearCompletedButton.addEventListener("click", clearCompleted);
+clearCompletedButton.addEventListener("click", handleClearCompleted);
+
+// View tabs
+tabButtons.forEach((button) =>
+  button.addEventListener("click", () => setActiveView(button.dataset.view))
+);
+
+// Searching re-renders on a short delay rather than on every keystroke.
+let searchTimer = null;
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(render, 150);
+});
+
+if (toastAction) toastAction.addEventListener("click", undoDelete);
 exportMarkdownButton.addEventListener("click", exportMarkdown);
 importMarkdownButton.addEventListener("click", importMarkdown);
 copyMarkdownButton.addEventListener("click", copyMarkdown);
@@ -994,7 +1042,7 @@ templateButtons.forEach((button) => {
 // Calendar
 calendarDate.addEventListener("change", () => {
   activeDate = calendarDate.value;
-  render();
+  setActiveView("all");
 });
 clearDateFilterButton.addEventListener("click", () => {
   activeDate = "";
@@ -1195,11 +1243,8 @@ function renderTodaySchedule() {
 
   if (todayTasks.length === 0) {
     todaySchedule.append(el("p", "muted", "No tasks scheduled for today."));
-    todayCount.textContent = "";
     return;
   }
-
-  todayCount.textContent = `${todayTasks.length} task${todayTasks.length !== 1 ? "s" : ""}`;
 
   todayTasks.forEach((task) => {
     const item = el("div", "schedule-item");
@@ -1305,5 +1350,5 @@ window.MedTodoStore = {
 };
 
 // Initial render
-render();
+setActiveView(activeView);
 

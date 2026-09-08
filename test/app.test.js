@@ -217,4 +217,89 @@ test("unreadable storage is preserved instead of being overwritten", () => {
   assertEqual(store.get(backups[0]), "{ this is not json");
 });
 
+// --- views and undo ---------------------------------------------------------
+function seeded() {
+  return loadApp(EVENING, [
+    { id: "t1", title: "due today", priority: "high", category: "work",
+      dueDate: "2026-09-08", dueTime: "09:00", completed: false,
+      createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
+      deleted: false },
+    { id: "t2", title: "due later", priority: "low", category: "home",
+      dueDate: "2026-09-11", dueTime: "", completed: false,
+      createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
+      deleted: false },
+  ]);
+}
+
+test("only the active view is rendered", () => {
+  const { api, elements } = seeded();
+  api.setActiveView("today");
+  assert(elements.get("#today-schedule").children.length > 0, "today view should be built");
+  assertEqual(elements.get("#task-list").children.length, 0, "the list view should not be built");
+
+  api.setActiveView("all");
+  assert(elements.get("#task-list").children.length > 0, "list view should be built on demand");
+});
+
+test("tab counts reflect today and the coming week", () => {
+  const { api, elements } = seeded();
+  api.renderCounts();
+  assertEqual(elements.get("#today-count").textContent, "1");
+  assertEqual(elements.get("#week-count").textContent, "2");
+});
+
+test("counts are blank rather than zero when nothing is due", () => {
+  const { api, elements } = loadApp(EVENING);
+  api.renderCounts();
+  assertEqual(elements.get("#today-count").textContent, "");
+  assertEqual(elements.get("#week-count").textContent, "");
+});
+
+test("undo restores a deleted task", () => {
+  const { api } = seeded();
+  api.deleteTask("t1");
+  assertEqual(api.liveTasks().length, 1);
+
+  api.showUndo("Deleted", ["t1"]);
+  api.undoDelete();
+  assertEqual(api.liveTasks().length, 2, "the task should come back");
+  const restored = api.getTasks().find((x) => x.id === "t1");
+  assertEqual(restored.deleted, false);
+});
+
+test("an undone delete outranks the tombstone on another device", () => {
+  const { api } = seeded();
+  api.deleteTask("t1");
+  const tombstone = api.getTasks().find((x) => x.id === "t1");
+
+  api.showUndo("Deleted", ["t1"]);
+  api.undoDelete();
+  const restored = api.getTasks().find((x) => x.id === "t1");
+
+  assert(Date.parse(restored.updatedAt) >= Date.parse(tombstone.updatedAt),
+    "the restore must not look older than the delete it reverses");
+  const merged = api.mergeTaskLists([restored], [tombstone]);
+  assertEqual(merged[0].deleted, false, "restore should win the merge");
+});
+
+test("clear completed can be undone", () => {
+  const { api } = seeded();
+  api.updateTask("t1", { completed: true });
+  api.updateTask("t2", { completed: true });
+  api.handleClearCompleted();
+  assertEqual(api.liveTasks().length, 0);
+
+  api.undoDelete();
+  assertEqual(api.liveTasks().length, 2, "both cleared tasks should return");
+});
+
+test("clear completed does nothing when there is nothing completed", () => {
+  const { api, elements } = seeded();
+  const toast = elements.get("#toast");
+  toast.hidden = true; // as the markup ships it
+  api.handleClearCompleted();
+  assertEqual(api.liveTasks().length, 2);
+  assertEqual(toast.hidden, true, "no undo should be offered when nothing changed");
+});
+
 report();

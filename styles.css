@@ -45,7 +45,7 @@ body {
 }
 
 .app {
-  max-width: 1200px;
+  max-width: 880px;
   margin: 0 auto;
   padding: 32px 20px 80px;
   display: flex;
@@ -54,21 +54,10 @@ body {
 }
 
 .layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 24px;
-  align-items: start;
+  display: block;
 }
 
 .main {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.sidebar {
-  position: sticky;
-  top: 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -461,14 +450,6 @@ input[type="checkbox"] {
 
 /* Mobile responsive design */
 @media (max-width: 900px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    position: static;
-  }
-
   .form-row {
     grid-template-columns: 1fr;
   }
@@ -947,4 +928,207 @@ input[type="checkbox"] {
 
 #sync-target {
   margin-top: 4px;
+}
+
+/* ---------------------------------------------------------------- Tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  background: var(--secondary);
+  border-radius: 12px;
+}
+
+.tab {
+  flex: 1;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.tab:hover {
+  transform: none;
+  box-shadow: none;
+  color: var(--text);
+}
+
+.tab.active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(15, 18, 24, 0.12);
+}
+
+.tab__count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-contrast);
+}
+
+.tab__count:empty {
+  display: none;
+}
+
+/* ------------------------------------------------------- Capture bar */
+.card--capture {
+  padding-bottom: 14px;
+}
+
+.card--capture .quick-capture {
+  margin-top: 0;
+}
+
+.capture-hint {
+  font-size: 0.82rem;
+  margin-bottom: 0;
+}
+
+.capture-hint em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* --------------------------------------------- Collapsible tool cards */
+.card--tool {
+  padding: 0;
+}
+
+.card--tool > *:not(summary) {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+
+.card--tool > *:last-child {
+  margin-bottom: 20px;
+}
+
+.tool__summary {
+  cursor: pointer;
+  padding: 18px 20px;
+  font-weight: 600;
+  font-size: 1rem;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+
+.tool__summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool__summary::before {
+  content: "›";
+  display: inline-block;
+  font-size: 1.2rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.card--tool[open] .tool__summary::before {
+  transform: rotate(90deg);
+}
+
+.tool__summary:hover {
+  color: var(--primary);
+}
+
+/* ----------------------------------------------------- Date filter row */
+.filter-row--date {
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.field--inline input {
+  padding: 8px 12px;
+}
+
+/* ------------------------------------------------------------- Toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: 0 6px 24px rgba(15, 18, 24, 0.28);
+  font-size: 0.9rem;
+  animation: slideIn 0.2s ease;
+}
+
+/* An author `display` beats the UA rule for [hidden], so restate it here or the
+   toast is visible on load. */
+.toast[hidden] {
+  display: none;
+}
+
+.toast span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast__action {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  padding: 6px 14px;
+  flex-shrink: 0;
+}
+
+.toast__action:hover {
+  transform: none;
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+@media (max-width: 600px) {
+  /* Clear the floating add button. */
+  .toast {
+    bottom: 84px;
+    left: 16px;
+    right: 16px;
+    transform: none;
+    max-width: none;
+  }
+
+  .tab {
+    padding: 10px 8px;
+    font-size: 0.85rem;
+  }
+
+  .card--tool > *:not(summary) {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+
+  .tool__summary {
+    padding: 16px;
+  }
 }

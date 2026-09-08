@@ -28,6 +28,23 @@ A versatile, mobile-first Progressive Web App (PWA) designed for busy profession
 - **Search & Filter**: Find tasks by keyword, category, status, or date
 - **Obsidian Integration**: Export/import Markdown checklists for note-taking sync
 
+## 🗓 The main view
+
+The app opens on **Schedule**, with three tabs:
+
+- **Today** — what is due today, in time order, with a count on the tab
+- **Week** — the next seven days, grouped by day
+- **All** — the full list with search, status and category filters, and a
+  jump-to-date control
+
+Everything else — the full add-task form, templates, calendar export, Obsidian,
+and manual backup — is tucked into collapsible sections below, so the daily view
+is the first thing on screen rather than the sixth.
+
+Deleting a task, or clearing completed ones, shows an **Undo** for a few
+seconds. Deletes are tombstones rather than removals, so undo is exact and the
+restore also wins on your other devices.
+
 ## 🔄 Device Sync
 
 Tasks are stored locally and can sync across your devices. The app encrypts them
