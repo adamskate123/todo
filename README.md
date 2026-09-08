@@ -28,6 +28,18 @@ A versatile, mobile-first Progressive Web App (PWA) designed for busy profession
 - **Search & Filter**: Find tasks by keyword, category, status, or date
 - **Obsidian Integration**: Export/import Markdown checklists for note-taking sync
 
+## 🪨 Obsidian plugin
+
+The same app runs inside Obsidian as a pane, storing tasks as an ordinary
+checklist note in your vault — searchable, linkable, hand-editable, and visible
+to Dataview. Clinical tasks stay out of the vault entirely.
+
+See **[OBSIDIAN_PLUGIN.md](OBSIDIAN_PLUGIN.md)** to install it.
+
+```bash
+npm run build:plugin   # regenerate obsidian-plugin/main.js and styles.css
+```
+
 ## 🍂 Seasons
 
 The backdrop changes with the calendar — blossoms in spring, warm sun in summer,

@@ -16,29 +16,24 @@ const vm = require("vm");
 // --- tiny test runner ------------------------------------------------------
 let passed = 0;
 const failures = [];
-const pending = [];
+const queued = [];
 
-// Tests may be sync or async; async ones are collected and awaited by report().
+// Tests are queued and run one at a time by report(). Running async tests
+// concurrently let them interfere through shared module state, which produced
+// failures that had nothing to do with the code under test.
 function test(name, fn) {
-  try {
-    const result = fn();
-    if (result && typeof result.then === "function") {
-      pending.push(
-        result.then(
-          () => { passed++; },
-          (error) => { failures.push({ name, error }); }
-        )
-      );
-    } else {
-      passed++;
-    }
-  } catch (error) {
-    failures.push({ name, error });
-  }
+  queued.push({ name, fn });
 }
 
 async function report() {
-  await Promise.all(pending);
+  for (const { name, fn } of queued) {
+    try {
+      await fn();
+      passed++;
+    } catch (error) {
+      failures.push({ name, error });
+    }
+  }
   console.log(`\n${passed} passed, ${failures.length} failed\n`);
   failures.forEach(({ name, error }) => {
     console.log(`  FAIL  ${name}\n        ${String(error.message || error).replace(/\n/g, "\n        ")}\n`);
@@ -195,9 +190,12 @@ function loadApp(nowIso, seededTasks) {
   }
 
   const context = makeContext(nowIso, elements, store);
-  const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
   vm.createContext(context);
-  vm.runInContext(source, context);
+  // app.js uses the shared markdown module, so it has to be in scope first --
+  // the page loads it via a script tag ahead of app.js for the same reason.
+  ["todo-markdown.js", "app.js"].forEach((file) => {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), context);
+  });
 
   // The container the app mounts against. Lookups are memoised so tests can
   // assert on the same element the app rendered into.
