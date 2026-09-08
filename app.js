@@ -1,5 +1,14 @@
 const STORAGE_KEY = "todo.tasks";
 
+// --- Storage schema --------------------------------------------------------
+// v1 stored a bare array of tasks. v2 stores { version, tasks } and gives every
+// task an updatedAt plus a soft-delete flag, which is what makes cross-device
+// merging possible at all.
+// These must stay above the `let tasks = loadTasks()` call below: loadTasks()
+// reads them, and a `const` referenced before its initializer throws.
+const SCHEMA_VERSION = 2;
+const TOMBSTONE_RETENTION_DAYS = 90;
+
 // Form elements
 const taskForm = document.querySelector("#task-form");
 const taskInput = document.querySelector("#task-input");
@@ -111,6 +120,69 @@ function generateId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// --- Local calendar dates --------------------------------------------------
+// toISOString() returns a UTC date. Using it to answer "what day is it" shifts
+// the calendar day for anyone not on UTC -- e.g. after ~8pm US Eastern it
+// reports tomorrow, so "Today's Schedule" silently showed the wrong day every
+// evening. Every *calendar date* (dueDate, today, the week grid) goes through
+// these helpers. Point-in-time stamps (createdAt/updatedAt) stay ISO/UTC.
+function toLocalDateString(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDate(dateString) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function todayString() {
+  return toLocalDateString(new Date());
+}
+
+// Build an element without going through innerHTML, so task titles can never
+// be parsed as markup.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function normalizeTask(task) {
+  const createdAt = task.createdAt || new Date().toISOString();
+  return {
+    notes: "",
+    tag: "",
+    dueDate: "",
+    dueTime: "",
+    recurrence: "",
+    priority: "medium",
+    category: "work",
+    completed: false,
+    ...task,
+    createdAt,
+    // Pre-v2 tasks have no updatedAt. Seeding it from createdAt keeps them from
+    // looking newer than they are during a merge.
+    updatedAt: task.updatedAt || createdAt,
+    deleted: task.deleted === true,
+  };
+}
+
+// Deleted tasks are kept as tombstones so a delete on one device wins over a
+// stale copy on another instead of the task reappearing. They are dropped once
+// every device has certainly seen the deletion.
+function purgeOldTombstones(list) {
+  const cutoff = Date.now() - TOMBSTONE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  return list.filter((task) => {
+    if (!task.deleted) return true;
+    const at = Date.parse(task.deletedAt || task.updatedAt || "");
+    return Number.isNaN(at) || at > cutoff;
+  });
+}
+
 function loadTasks() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -118,15 +190,54 @@ function loadTasks() {
   }
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const list = Array.isArray(parsed)
+      ? parsed
+      : parsed && Array.isArray(parsed.tasks)
+      ? parsed.tasks
+      : [];
+    return purgeOldTombstones(list.map(normalizeTask));
   } catch (error) {
-    console.warn("Unable to parse saved tasks", error);
+    // Returning [] here means the next saveTasks() would overwrite whatever is
+    // in storage, so keep a copy of the unreadable value first.
+    console.error("Unable to read saved tasks; preserving a copy", error);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}.corrupt.${Date.now()}`, raw);
+    } catch (nested) {
+      console.error("Could not preserve unreadable tasks", nested);
+    }
     return [];
   }
 }
 
 function saveTasks() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ version: SCHEMA_VERSION, tasks })
+  );
+}
+
+// Everything the user should actually see. Tombstones stay in `tasks` for sync
+// but must never reach the UI.
+function liveTasks() {
+  return tasks.filter((task) => !task.deleted);
+}
+
+// Merge two task lists by id: newest updatedAt wins. A deletion is just a
+// tombstone with a timestamp, so it competes on the same footing as an edit.
+function mergeTaskLists(mine, theirs) {
+  const byId = new Map();
+  mine.map(normalizeTask).forEach((task) => byId.set(task.id, task));
+  theirs.map(normalizeTask).forEach((incoming) => {
+    const existing = byId.get(incoming.id);
+    if (!existing) {
+      byId.set(incoming.id, incoming);
+      return;
+    }
+    const mineAt = Date.parse(existing.updatedAt) || 0;
+    const theirsAt = Date.parse(incoming.updatedAt) || 0;
+    byId.set(incoming.id, theirsAt > mineAt ? incoming : existing);
+  });
+  return Array.from(byId.values());
 }
 
 function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recurrence }) {
@@ -134,6 +245,7 @@ function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recu
     return;
   }
 
+  const now = new Date().toISOString();
   const task = {
     id: generateId(),
     title: title.trim(),
@@ -145,7 +257,9 @@ function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recu
     dueTime: dueTime || "",
     recurrence: recurrence || "",
     completed: false,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    deleted: false,
   };
 
   tasks.unshift(task);
@@ -156,19 +270,32 @@ function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recu
 }
 
 function updateTask(id, updates) {
-  tasks = tasks.map((task) => (task.id === id ? { ...task, ...updates } : task));
+  const now = new Date().toISOString();
+  tasks = tasks.map((task) =>
+    task.id === id ? { ...task, ...updates, updatedAt: now } : task
+  );
   saveTasks();
   render();
 }
 
 function deleteTask(id) {
-  tasks = tasks.filter((task) => task.id !== id);
+  const now = new Date().toISOString();
+  tasks = tasks.map((task) =>
+    task.id === id
+      ? { ...task, deleted: true, deletedAt: now, updatedAt: now }
+      : task
+  );
   saveTasks();
   render();
 }
 
 function clearCompleted() {
-  tasks = tasks.filter((task) => !task.completed);
+  const now = new Date().toISOString();
+  tasks = tasks.map((task) =>
+    task.completed && !task.deleted
+      ? { ...task, deleted: true, deletedAt: now, updatedAt: now }
+      : task
+  );
   saveTasks();
   render();
 }
@@ -199,7 +326,7 @@ function completeTask(id) {
 }
 
 function calculateNextDate(dateString, recurrence) {
-  const date = new Date(dateString);
+  const date = parseLocalDate(dateString);
 
   switch (recurrence) {
     case "daily":
@@ -215,7 +342,7 @@ function calculateNextDate(dateString, recurrence) {
       return null;
   }
 
-  return date.toISOString().split('T')[0];
+  return toLocalDateString(date);
 }
 
 function filterTasks(list) {
@@ -260,7 +387,7 @@ function sortTasks(list) {
 }
 
 function render() {
-  const visibleTasks = sortTasks(filterTasks(tasks));
+  const visibleTasks = sortTasks(filterTasks(liveTasks()));
   taskList.innerHTML = "";
 
   visibleTasks.forEach((task) => {
@@ -342,12 +469,13 @@ function render() {
   });
 
   // Update task count with category breakdown
-  const categoryStats = tasks.reduce((acc, task) => {
+  const counted = liveTasks();
+  const categoryStats = counted.reduce((acc, task) => {
     acc[task.category] = (acc[task.category] || 0) + 1;
     return acc;
   }, {});
 
-  let countText = `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`;
+  let countText = `${counted.length} task${counted.length !== 1 ? "s" : ""}`;
   if (activeCategory) {
     const catCount = categoryStats[activeCategory] || 0;
     countText += ` (${catCount} ${activeCategory})`;
@@ -531,7 +659,7 @@ function parseQuickCapture(text) {
       targetDate.setDate(targetDate.getDate() + (num * 7));
     }
 
-    dueDate = targetDate.toISOString().split('T')[0];
+    dueDate = toLocalDateString(targetDate);
     title = title.replace(inDaysMatch[0], "").trim();
   }
   // Handle "next [day]" (e.g., "next monday", "next friday")
@@ -547,7 +675,7 @@ function parseQuickCapture(text) {
 
     const targetDate = new Date(today);
     targetDate.setDate(targetDate.getDate() + daysUntil);
-    dueDate = targetDate.toISOString().split('T')[0];
+    dueDate = toLocalDateString(targetDate);
     title = title.replace(dayMatch[0], "").trim();
   }
   // Handle day names (next occurrence)
@@ -563,26 +691,26 @@ function parseQuickCapture(text) {
 
     const targetDate = new Date(today);
     targetDate.setDate(targetDate.getDate() + daysUntil);
-    dueDate = targetDate.toISOString().split('T')[0];
+    dueDate = toLocalDateString(targetDate);
     title = title.replace(dayMatch[0], "").trim();
   }
   // Handle "next week"
   else if (/\bnext\s+week\b/i.test(text)) {
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 7);
-    dueDate = nextWeek.toISOString().split('T')[0];
+    dueDate = toLocalDateString(nextWeek);
     title = title.replace(/\bnext\s+week\b/i, "").trim();
   }
   // Handle "tomorrow"
   else if (/\btomorrow\b/i.test(text)) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    dueDate = tomorrow.toISOString().split('T')[0];
+    dueDate = toLocalDateString(tomorrow);
     title = title.replace(/\btomorrow\b/i, "").trim();
   }
   // Handle "today"
   else if (/\btoday\b/i.test(text)) {
-    dueDate = today.toISOString().split('T')[0];
+    dueDate = toLocalDateString(today);
     title = title.replace(/\btoday\b/i, "").trim();
   }
   // Handle YYYY-MM-DD format
@@ -757,7 +885,7 @@ function handleCategoryFilterClick(event) {
 }
 
 function renderCalendar() {
-  const withDueDates = tasks
+  const withDueDates = liveTasks()
     .filter((task) => task.dueDate)
     .slice()
     .sort((a, b) => {
@@ -875,14 +1003,14 @@ function exportJson() {
   const dataStr = JSON.stringify({
     tasks: tasks,
     exportDate: new Date().toISOString(),
-    version: "1.0"
+    version: SCHEMA_VERSION
   }, null, 2);
 
   const blob = new Blob([dataStr], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `medtodo-backup-${new Date().toISOString().split('T')[0]}.json`;
+  link.download = `medtodo-backup-${todayString()}.json`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -935,7 +1063,7 @@ function importJson(event) {
 
 // ICS Calendar Export
 function exportToCalendar() {
-  const tasksWithDates = tasks.filter(task => task.dueDate && !task.completed);
+  const tasksWithDates = liveTasks().filter(task => task.dueDate && !task.completed);
 
   if (tasksWithDates.length === 0) {
     alert('No tasks with due dates to export.\n\nAdd due dates to tasks first, then export to calendar.');
@@ -1009,7 +1137,7 @@ function exportToCalendar() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `medtodo-calendar-${new Date().toISOString().split('T')[0]}.ics`;
+  link.download = `medtodo-calendar-${todayString()}.ics`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1020,8 +1148,8 @@ function exportToCalendar() {
 
 // Get today's tasks sorted by time
 function getTodaysTasks() {
-  const today = new Date().toISOString().split('T')[0];
-  return tasks
+  const today = todayString();
+  return liveTasks()
     .filter(task => task.dueDate === today && !task.completed)
     .sort((a, b) => {
       if (a.dueTime && b.dueTime) {
@@ -1037,16 +1165,17 @@ function getTodaysTasks() {
 function getWeekTasks() {
   const today = new Date();
   const weekTasks = {};
+  const live = liveTasks();
 
   for (let i = 0; i < 7; i++) {
     const date = new Date(today);
     date.setDate(today.getDate() + i);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = toLocalDateString(date);
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
     weekTasks[dateStr] = {
       dayName,
-      tasks: tasks
+      tasks: live
         .filter(task => task.dueDate === dateStr && !task.completed)
         .sort((a, b) => (a.dueTime || '').localeCompare(b.dueTime || ''))
     };
@@ -1058,71 +1187,82 @@ function getWeekTasks() {
 // Render Today's Schedule
 function renderTodaySchedule() {
   const todayTasks = getTodaysTasks();
+  todaySchedule.replaceChildren();
 
   if (todayTasks.length === 0) {
-    todaySchedule.innerHTML = '<p class="muted">No tasks scheduled for today.</p>';
-    todayCount.textContent = '';
+    todaySchedule.append(el("p", "muted", "No tasks scheduled for today."));
+    todayCount.textContent = "";
     return;
   }
 
-  todayCount.textContent = `${todayTasks.length} task${todayTasks.length !== 1 ? 's' : ''}`;
+  todayCount.textContent = `${todayTasks.length} task${todayTasks.length !== 1 ? "s" : ""}`;
 
-  todaySchedule.innerHTML = todayTasks.map(task => `
-    <div class="schedule-item">
-      <span class="schedule-time">${task.dueTime || 'No time'}</span>
-      <div class="schedule-task">
-        <span class="schedule-title">${task.title}</span>
-        <div class="schedule-meta">
-          <span class="badge badge-${task.category}">${task.category}</span>
-          <span class="badge badge-priority-${task.priority}">${task.priority}</span>
-        </div>
-      </div>
-    </div>
-  `).join('');
+  todayTasks.forEach((task) => {
+    const item = el("div", "schedule-item");
+    item.append(el("span", "schedule-time", task.dueTime || "No time"));
+
+    const body = el("div", "schedule-task");
+    body.append(el("span", "schedule-title", task.title));
+
+    const meta = el("div", "schedule-meta");
+    if (task.category) {
+      meta.append(el("span", `badge badge-${task.category}`, task.category));
+    }
+    if (task.priority) {
+      meta.append(el("span", `badge badge-priority-${task.priority}`, task.priority));
+    }
+    body.append(meta);
+    item.append(body);
+
+    todaySchedule.append(item);
+  });
 }
 
 // Render Week View
 function renderWeekView() {
-  const weekTasks = getWeekTasks();
-  const entries = Object.entries(weekTasks);
+  const entries = Object.entries(getWeekTasks());
+  weekView.replaceChildren();
 
-  const hasAnyTasks = entries.some(([_, data]) => data.tasks.length > 0);
-
-  if (!hasAnyTasks) {
-    weekView.innerHTML = '<p class="muted">No tasks scheduled this week.</p>';
+  if (!entries.some(([, data]) => data.tasks.length > 0)) {
+    weekView.append(el("p", "muted", "No tasks scheduled this week."));
     return;
   }
 
-  weekView.innerHTML = entries.map(([dateStr, data]) => {
+  entries.forEach(([, data]) => {
+    const day = el("div", "week-day");
+    const header = el("div", "week-day-header");
+    header.append(el("span", "week-day-name", data.dayName));
+
     if (data.tasks.length === 0) {
-      return `
-        <div class="week-day">
-          <div class="week-day-header">
-            <span class="week-day-name">${data.dayName}</span>
-            <span class="week-day-count muted">No tasks</span>
-          </div>
-        </div>
-      `;
+      header.append(el("span", "week-day-count muted", "No tasks"));
+      day.append(header);
+      weekView.append(day);
+      return;
     }
 
-    return `
-      <div class="week-day">
-        <div class="week-day-header">
-          <span class="week-day-name">${data.dayName}</span>
-          <span class="week-day-count">${data.tasks.length} task${data.tasks.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="week-day-tasks">
-          ${data.tasks.map(task => `
-            <div class="week-task">
-              <span class="week-task-time">${task.dueTime || '—'}</span>
-              <span class="week-task-title">${task.title}</span>
-              <span class="badge badge-priority-${task.priority}">${task.priority}</span>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-  }).join('');
+    header.append(
+      el(
+        "span",
+        "week-day-count",
+        `${data.tasks.length} task${data.tasks.length !== 1 ? "s" : ""}`
+      )
+    );
+    day.append(header);
+
+    const list = el("div", "week-day-tasks");
+    data.tasks.forEach((task) => {
+      const row = el("div", "week-task");
+      row.append(el("span", "week-task-time", task.dueTime || "—"));
+      row.append(el("span", "week-task-title", task.title));
+      row.append(
+        el("span", `badge badge-priority-${task.priority}`, task.priority)
+      );
+      list.append(row);
+    });
+    day.append(list);
+
+    weekView.append(day);
+  });
 }
 
 // Calendar export event listener
