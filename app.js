@@ -62,6 +62,9 @@ const tabButtons = document.querySelectorAll(".tab");
 const viewPanels = document.querySelectorAll(".view");
 const weekCount = document.querySelector("#week-count");
 
+// Season
+const seasonChip = document.querySelector("#season-chip");
+
 // Undo toast
 const toast = document.querySelector("#toast");
 const toastMessage = document.querySelector("#toast-message");
@@ -1348,6 +1351,80 @@ window.MedTodoStore = {
   mergeTaskLists,
   normalizeTask,
 };
+
+// --- Seasonal theme ---------------------------------------------------------
+// Meteorological seasons, northern hemisphere. The chip in the header cycles
+// through Auto and the four seasons, so anyone south of the equator (or just
+// bored of the current one) can pin whichever they like.
+const SEASON_KEY = "todo.season";
+const SEASONS = ["spring", "summer", "autumn", "winter"];
+const SEASON_LABELS = {
+  spring: "🌸 Spring",
+  summer: "☀️ Summer",
+  autumn: "🍂 Autumn",
+  winter: "❄️ Winter",
+};
+const SEASON_THEME_COLORS = {
+  spring: "#7fb069",
+  summer: "#f0a830",
+  autumn: "#c96a2b",
+  winter: "#5b8db8",
+};
+
+function seasonForDate(date) {
+  const month = date.getMonth();
+  if (month >= 2 && month <= 4) return "spring";
+  if (month >= 5 && month <= 7) return "summer";
+  if (month >= 8 && month <= 10) return "autumn";
+  return "winter";
+}
+
+function loadSeasonPreference() {
+  try {
+    const stored = localStorage.getItem(SEASON_KEY);
+    return stored === "auto" || SEASONS.includes(stored) ? stored : "auto";
+  } catch (error) {
+    return "auto";
+  }
+}
+
+function resolveSeason(preference, date) {
+  return SEASONS.includes(preference) ? preference : seasonForDate(date);
+}
+
+function applySeason() {
+  const preference = loadSeasonPreference();
+  const season = resolveSeason(preference, new Date());
+  const pinned = preference !== "auto";
+
+  document.documentElement.dataset.season = season;
+
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.setAttribute("content", SEASON_THEME_COLORS[season]);
+
+  if (seasonChip) {
+    seasonChip.textContent = SEASON_LABELS[season];
+    seasonChip.classList.toggle("season-chip--pinned", pinned);
+    seasonChip.title = pinned
+      ? `Season pinned to ${season}. Click to change; keep clicking to return to automatic.`
+      : `${SEASON_LABELS[season].split(" ")[1]}, following the calendar. Click to pick a different one.`;
+  }
+  return season;
+}
+
+function cycleSeason() {
+  const order = ["auto"].concat(SEASONS);
+  const next = order[(order.indexOf(loadSeasonPreference()) + 1) % order.length];
+  try {
+    localStorage.setItem(SEASON_KEY, next);
+  } catch (error) {
+    console.warn("Unable to save season preference", error);
+  }
+  applySeason();
+}
+
+if (seasonChip) seasonChip.addEventListener("click", cycleSeason);
+applySeason();
 
 // Initial render
 setActiveView(activeView);

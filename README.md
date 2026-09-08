@@ -28,6 +28,21 @@ A versatile, mobile-first Progressive Web App (PWA) designed for busy profession
 - **Search & Filter**: Find tasks by keyword, category, status, or date
 - **Obsidian Integration**: Export/import Markdown checklists for note-taking sync
 
+## 🍂 Seasons
+
+The backdrop changes with the calendar — blossoms in spring, warm sun in summer,
+falling leaves in autumn, snowflakes in winter — using meteorological seasons
+(spring starts 1 March, and so on) in the **northern hemisphere**.
+
+The chip in the header shows the current season. Click it to cycle through the
+four seasons and back to automatic; a pinned season is outlined and remembered
+on that device. Southern-hemisphere users can just pin the opposite season.
+
+Only the page backdrop and one accent colour change. Priority, category, and
+button colours stay fixed, so nothing that carries meaning shifts with the time
+of year. The artwork is inline SVG in the stylesheet — no image downloads, and
+it works offline. There is no animation.
+
 ## 🗓 The main view
 
 The app opens on **Schedule**, with three tabs:

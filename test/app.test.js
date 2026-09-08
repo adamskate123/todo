@@ -302,4 +302,56 @@ test("clear completed does nothing when there is nothing completed", () => {
   assertEqual(toast.hidden, true, "no undo should be offered when nothing changed");
 });
 
+// --- seasonal theme ---------------------------------------------------------
+test("seasons follow the meteorological calendar", () => {
+  const { api } = loadApp(EVENING);
+  const expected = [
+    "winter", "winter", "spring", "spring", "spring", "summer",
+    "summer", "summer", "autumn", "autumn", "autumn", "winter",
+  ];
+  expected.forEach((season, index) => {
+    assertEqual(api.seasonForDate(new Date(2026, index, 15)), season, `month index ${index}`);
+  });
+});
+
+test("season boundaries land on the right side", () => {
+  const { api } = loadApp(EVENING);
+  assertEqual(api.seasonForDate(new Date(2026, 1, 28)), "winter", "end of February");
+  assertEqual(api.seasonForDate(new Date(2026, 2, 1)), "spring", "start of March");
+  assertEqual(api.seasonForDate(new Date(2026, 10, 30)), "autumn", "end of November");
+  assertEqual(api.seasonForDate(new Date(2026, 11, 1)), "winter", "start of December");
+});
+
+test("a pinned season overrides the calendar", () => {
+  const { api } = loadApp(EVENING);
+  const midsummer = new Date(2026, 6, 4);
+  assertEqual(api.resolveSeason("auto", midsummer), "summer");
+  assertEqual(api.resolveSeason("winter", midsummer), "winter");
+  assertEqual(api.resolveSeason("nonsense", midsummer), "summer", "junk falls back to the calendar");
+});
+
+test("applySeason marks the document and labels the chip", () => {
+  const { api, elements, context } = loadApp(EVENING);
+  assertEqual(api.applySeason(), "autumn", "September should be autumn");
+  assertEqual(context.document.documentElement.dataset.season, "autumn");
+  assertEqual(elements.get("#season-chip").textContent, "🍂 Autumn");
+});
+
+test("the chip cycles through the seasons and back to automatic", () => {
+  const { api, store } = loadApp(EVENING);
+  const seen = [];
+  for (let i = 0; i < 5; i++) {
+    api.cycleSeason();
+    seen.push(store.get("todo.season"));
+  }
+  assertEqual(seen.join(","), "spring,summer,autumn,winter,auto");
+});
+
+test("a stored season wins over the calendar on load", () => {
+  const { api, store, context } = loadApp(EVENING);
+  store.set("todo.season", "winter");
+  assertEqual(api.applySeason(), "winter");
+  assertEqual(context.document.documentElement.dataset.season, "winter");
+});
+
 report();

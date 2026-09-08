@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medtodo-v6';
+const CACHE_NAME = 'medtodo-v7';
 const urlsToCache = [
   './',
   './index.html',

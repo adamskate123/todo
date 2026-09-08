@@ -79,6 +79,13 @@ class StubElement {
     this.children = [...nodes];
   }
   addEventListener() {}
+  setAttribute(name, value) {
+    this.attributes = this.attributes || {};
+    this.attributes[name] = String(value);
+  }
+  getAttribute(name) {
+    return (this.attributes || {})[name] || null;
+  }
   scrollIntoView() {}
   focus() {}
   click() {}
@@ -166,6 +173,7 @@ function loadApp(nowIso, seededTasks) {
       },
       querySelectorAll: () => [],
       createElement: (tag) => new StubElement(tag),
+      documentElement: new StubElement("html"),
       addEventListener() {},
       body: new StubElement(),
     },
@@ -190,6 +198,7 @@ function loadApp(nowIso, seededTasks) {
       addTask, deleteTask, updateTask, clearCompleted,
       renderTodaySchedule, renderWeekView, calculateNextDate,
       renderTaskList, renderCounts, setActiveView, undoDelete, showUndo,
+      seasonForDate, resolveSeason, applySeason, cycleSeason, SEASONS,
       handleClearCompleted,
       getActiveView: () => activeView,
       setTasks: (t) => { tasks = t; },
