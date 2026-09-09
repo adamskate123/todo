@@ -1,5 +1,14 @@
 const STORAGE_KEY = "todo.tasks";
 
+// --- Storage schema --------------------------------------------------------
+// v1 stored a bare array of tasks. v2 stores { version, tasks } and gives every
+// task an updatedAt plus a soft-delete flag, which is what makes cross-device
+// merging possible at all.
+// These must stay above the `let tasks = loadTasks()` call below: loadTasks()
+// reads them, and a `const` referenced before its initializer throws.
+const SCHEMA_VERSION = 2;
+const TOMBSTONE_RETENTION_DAYS = 90;
+
 // Form elements
 const taskForm = document.querySelector("#task-form");
 const taskInput = document.querySelector("#task-input");
@@ -44,12 +53,22 @@ const todaySchedule = document.querySelector("#today-schedule");
 const todayCount = document.querySelector("#today-count");
 const weekView = document.querySelector("#week-view");
 
-// Calendar
+// Date filter
 const calendarDate = document.querySelector("#calendar-date");
 const clearDateFilterButton = document.querySelector("#clear-date-filter");
-const calendarList = document.querySelector("#calendar-list");
-const calendarSummary = document.querySelector("#calendar-summary");
-const calendarEmpty = document.querySelector("#calendar-empty");
+
+// View tabs
+const tabButtons = document.querySelectorAll(".tab");
+const viewPanels = document.querySelectorAll(".view");
+const weekCount = document.querySelector("#week-count");
+
+// Season
+const seasonChip = document.querySelector("#season-chip");
+
+// Undo toast
+const toast = document.querySelector("#toast");
+const toastMessage = document.querySelector("#toast-message");
+const toastAction = document.querySelector("#toast-action");
 
 // Edit modal
 const editModal = document.querySelector("#edit-modal");
@@ -68,6 +87,7 @@ const editRecurrence = document.querySelector("#edit-recurrence");
 // State
 let tasks = loadTasks();
 let activeFilter = "all";
+let activeView = "today";
 let activeCategory = "";
 let activeDate = "";
 let currentEditingTaskId = null;
@@ -111,6 +131,69 @@ function generateId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// --- Local calendar dates --------------------------------------------------
+// toISOString() returns a UTC date. Using it to answer "what day is it" shifts
+// the calendar day for anyone not on UTC -- e.g. after ~8pm US Eastern it
+// reports tomorrow, so "Today's Schedule" silently showed the wrong day every
+// evening. Every *calendar date* (dueDate, today, the week grid) goes through
+// these helpers. Point-in-time stamps (createdAt/updatedAt) stay ISO/UTC.
+function toLocalDateString(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDate(dateString) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function todayString() {
+  return toLocalDateString(new Date());
+}
+
+// Build an element without going through innerHTML, so task titles can never
+// be parsed as markup.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function normalizeTask(task) {
+  const createdAt = task.createdAt || new Date().toISOString();
+  return {
+    notes: "",
+    tag: "",
+    dueDate: "",
+    dueTime: "",
+    recurrence: "",
+    priority: "medium",
+    category: "work",
+    completed: false,
+    ...task,
+    createdAt,
+    // Pre-v2 tasks have no updatedAt. Seeding it from createdAt keeps them from
+    // looking newer than they are during a merge.
+    updatedAt: task.updatedAt || createdAt,
+    deleted: task.deleted === true,
+  };
+}
+
+// Deleted tasks are kept as tombstones so a delete on one device wins over a
+// stale copy on another instead of the task reappearing. They are dropped once
+// every device has certainly seen the deletion.
+function purgeOldTombstones(list) {
+  const cutoff = Date.now() - TOMBSTONE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  return list.filter((task) => {
+    if (!task.deleted) return true;
+    const at = Date.parse(task.deletedAt || task.updatedAt || "");
+    return Number.isNaN(at) || at > cutoff;
+  });
+}
+
 function loadTasks() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -118,15 +201,58 @@ function loadTasks() {
   }
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const list = Array.isArray(parsed)
+      ? parsed
+      : parsed && Array.isArray(parsed.tasks)
+      ? parsed.tasks
+      : [];
+    return purgeOldTombstones(list.map(normalizeTask));
   } catch (error) {
-    console.warn("Unable to parse saved tasks", error);
+    // Returning [] here means the next saveTasks() would overwrite whatever is
+    // in storage, so keep a copy of the unreadable value first.
+    console.error("Unable to read saved tasks; preserving a copy", error);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}.corrupt.${Date.now()}`, raw);
+    } catch (nested) {
+      console.error("Could not preserve unreadable tasks", nested);
+    }
     return [];
   }
 }
 
 function saveTasks() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ version: SCHEMA_VERSION, tasks })
+  );
+  // Debounced; a no-op until sync is configured.
+  if (window.MedTodoSync) {
+    window.MedTodoSync.scheduleAutosync();
+  }
+}
+
+// Everything the user should actually see. Tombstones stay in `tasks` for sync
+// but must never reach the UI.
+function liveTasks() {
+  return tasks.filter((task) => !task.deleted);
+}
+
+// Merge two task lists by id: newest updatedAt wins. A deletion is just a
+// tombstone with a timestamp, so it competes on the same footing as an edit.
+function mergeTaskLists(mine, theirs) {
+  const byId = new Map();
+  mine.map(normalizeTask).forEach((task) => byId.set(task.id, task));
+  theirs.map(normalizeTask).forEach((incoming) => {
+    const existing = byId.get(incoming.id);
+    if (!existing) {
+      byId.set(incoming.id, incoming);
+      return;
+    }
+    const mineAt = Date.parse(existing.updatedAt) || 0;
+    const theirsAt = Date.parse(incoming.updatedAt) || 0;
+    byId.set(incoming.id, theirsAt > mineAt ? incoming : existing);
+  });
+  return Array.from(byId.values());
 }
 
 function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recurrence }) {
@@ -134,6 +260,7 @@ function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recu
     return;
   }
 
+  const now = new Date().toISOString();
   const task = {
     id: generateId(),
     title: title.trim(),
@@ -145,7 +272,9 @@ function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recu
     dueTime: dueTime || "",
     recurrence: recurrence || "",
     completed: false,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    deleted: false,
   };
 
   tasks.unshift(task);
@@ -156,19 +285,32 @@ function addTask({ title, notes, priority, category, tag, dueDate, dueTime, recu
 }
 
 function updateTask(id, updates) {
-  tasks = tasks.map((task) => (task.id === id ? { ...task, ...updates } : task));
+  const now = new Date().toISOString();
+  tasks = tasks.map((task) =>
+    task.id === id ? { ...task, ...updates, updatedAt: now } : task
+  );
   saveTasks();
   render();
 }
 
 function deleteTask(id) {
-  tasks = tasks.filter((task) => task.id !== id);
+  const now = new Date().toISOString();
+  tasks = tasks.map((task) =>
+    task.id === id
+      ? { ...task, deleted: true, deletedAt: now, updatedAt: now }
+      : task
+  );
   saveTasks();
   render();
 }
 
 function clearCompleted() {
-  tasks = tasks.filter((task) => !task.completed);
+  const now = new Date().toISOString();
+  tasks = tasks.map((task) =>
+    task.completed && !task.deleted
+      ? { ...task, deleted: true, deletedAt: now, updatedAt: now }
+      : task
+  );
   saveTasks();
   render();
 }
@@ -199,7 +341,7 @@ function completeTask(id) {
 }
 
 function calculateNextDate(dateString, recurrence) {
-  const date = new Date(dateString);
+  const date = parseLocalDate(dateString);
 
   switch (recurrence) {
     case "daily":
@@ -215,7 +357,7 @@ function calculateNextDate(dateString, recurrence) {
       return null;
   }
 
-  return date.toISOString().split('T')[0];
+  return toLocalDateString(date);
 }
 
 function filterTasks(list) {
@@ -259,8 +401,8 @@ function sortTasks(list) {
   });
 }
 
-function render() {
-  const visibleTasks = sortTasks(filterTasks(tasks));
+function renderTaskList() {
+  const visibleTasks = sortTasks(filterTasks(liveTasks()));
   taskList.innerHTML = "";
 
   visibleTasks.forEach((task) => {
@@ -333,7 +475,10 @@ function render() {
     const deleteButton = document.createElement("button");
     deleteButton.className = "danger";
     deleteButton.textContent = "Delete";
-    deleteButton.addEventListener("click", () => deleteTask(task.id));
+    deleteButton.addEventListener("click", () => {
+      deleteTask(task.id);
+      showUndo(`Deleted "${task.title}"`, [task.id]);
+    });
 
     actions.append(editButton, deleteButton);
 
@@ -341,22 +486,54 @@ function render() {
     taskList.append(listItem);
   });
 
-  // Update task count with category breakdown
-  const categoryStats = tasks.reduce((acc, task) => {
+}
+
+function renderCounts() {
+  const counted = liveTasks();
+  const categoryStats = counted.reduce((acc, task) => {
     acc[task.category] = (acc[task.category] || 0) + 1;
     return acc;
   }, {});
 
-  let countText = `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`;
+  let countText = `${counted.length} task${counted.length !== 1 ? "s" : ""}`;
   if (activeCategory) {
     const catCount = categoryStats[activeCategory] || 0;
     countText += ` (${catCount} ${activeCategory})`;
   }
   taskCount.textContent = countText;
 
-  renderCalendar();
-  renderTodaySchedule();
-  renderWeekView();
+  const todayTotal = getTodaysTasks().length;
+  todayCount.textContent = todayTotal ? String(todayTotal) : "";
+
+  const weekTotal = Object.values(getWeekTasks())
+    .reduce((sum, day) => sum + day.tasks.length, 0);
+  if (weekCount) weekCount.textContent = weekTotal ? String(weekTotal) : "";
+}
+
+// Only the visible panel is rebuilt. Searching used to re-render every view on
+// each keystroke, which is what made large lists feel sluggish.
+function render() {
+  renderCounts();
+  if (activeView === "today") {
+    renderTodaySchedule();
+  } else if (activeView === "week") {
+    renderWeekView();
+  } else {
+    renderTaskList();
+  }
+}
+
+function setActiveView(view) {
+  activeView = view;
+  tabButtons.forEach((button) => {
+    const selected = button.dataset.view === view;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  viewPanels.forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== view;
+  });
+  render();
 }
 
 function startEdit(task) {
@@ -531,7 +708,7 @@ function parseQuickCapture(text) {
       targetDate.setDate(targetDate.getDate() + (num * 7));
     }
 
-    dueDate = targetDate.toISOString().split('T')[0];
+    dueDate = toLocalDateString(targetDate);
     title = title.replace(inDaysMatch[0], "").trim();
   }
   // Handle "next [day]" (e.g., "next monday", "next friday")
@@ -547,7 +724,7 @@ function parseQuickCapture(text) {
 
     const targetDate = new Date(today);
     targetDate.setDate(targetDate.getDate() + daysUntil);
-    dueDate = targetDate.toISOString().split('T')[0];
+    dueDate = toLocalDateString(targetDate);
     title = title.replace(dayMatch[0], "").trim();
   }
   // Handle day names (next occurrence)
@@ -563,26 +740,26 @@ function parseQuickCapture(text) {
 
     const targetDate = new Date(today);
     targetDate.setDate(targetDate.getDate() + daysUntil);
-    dueDate = targetDate.toISOString().split('T')[0];
+    dueDate = toLocalDateString(targetDate);
     title = title.replace(dayMatch[0], "").trim();
   }
   // Handle "next week"
   else if (/\bnext\s+week\b/i.test(text)) {
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 7);
-    dueDate = nextWeek.toISOString().split('T')[0];
+    dueDate = toLocalDateString(nextWeek);
     title = title.replace(/\bnext\s+week\b/i, "").trim();
   }
   // Handle "tomorrow"
   else if (/\btomorrow\b/i.test(text)) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    dueDate = tomorrow.toISOString().split('T')[0];
+    dueDate = toLocalDateString(tomorrow);
     title = title.replace(/\btomorrow\b/i, "").trim();
   }
   // Handle "today"
   else if (/\btoday\b/i.test(text)) {
-    dueDate = today.toISOString().split('T')[0];
+    dueDate = toLocalDateString(today);
     title = title.replace(/\btoday\b/i, "").trim();
   }
   // Handle YYYY-MM-DD format
@@ -639,29 +816,145 @@ function applyTemplate(templateName) {
   taskInput.focus();
 }
 
+// --- Obsidian markdown ------------------------------------------------------
+// Notes sit on an indented continuation line rather than after a dash on the
+// task line. The old " — " separator was ambiguous: a title containing an em
+// dash ("Clinic — new patient consults") was split at the wrong place, so the
+// title was truncated and the rest of it became the notes.
+const MARKDOWN_META_KEYS = ["priority", "category", "due", "recurrence"];
+const MARKDOWN_TASK_RE = /^\s*[-*] \[([ xX])\]\s*/;
+// Anchored at end of line, and unable to cross a nested parenthesis, so the
+// metadata block is found even when the title itself ends in brackets.
+const MARKDOWN_META_RE = /\(([^()]*)\)\s*$/;
+// Only a tag at the very end is treated as one, so a "#" inside a title stays.
+const MARKDOWN_TAG_RE = /\s(#[\w-]+)\s*$/;
+
 function exportMarkdown() {
-  const lines = tasks
+  const lines = [];
+  liveTasks()
     .slice()
     .reverse()
-    .map((task) => {
+    .forEach((task) => {
       const checkbox = task.completed ? "- [x]" : "- [ ]";
-      const notes = task.notes ? ` — ${task.notes}` : "";
       const tag = task.tag ? ` ${task.tag}` : "";
       const metaParts = [
         `priority: ${task.priority}`,
         `category: ${task.category}`,
       ];
       if (task.dueDate) {
-        const dateTime = task.dueTime ? `${task.dueDate} ${task.dueTime}` : task.dueDate;
-        metaParts.push(`due: ${dateTime}`);
+        metaParts.push(
+          `due: ${task.dueTime ? `${task.dueDate} ${task.dueTime}` : task.dueDate}`
+        );
       }
       if (task.recurrence) {
         metaParts.push(`recurrence: ${task.recurrence}`);
       }
-      const metadata = ` (${metaParts.join(", ")})`;
-      return `${checkbox} ${task.title}${notes}${tag}${metadata}`;
+      lines.push(`${checkbox} ${task.title}${tag} (${metaParts.join(", ")})`);
+      if (task.notes) {
+        // Indented, so Obsidian renders it as part of the list item.
+        task.notes.split(/\r?\n/).forEach((note) => lines.push(`      ${note}`));
+      }
     });
   markdownArea.value = lines.join("\n");
+}
+
+// A trailing parenthesis counts as metadata only when every part is a known
+// key, so a title like "Review protocol (draft)" is left intact.
+function parseMarkdownMetadata(text) {
+  const parts = text.split(",").map((part) => part.trim()).filter(Boolean);
+  if (!parts.length) {
+    return null;
+  }
+  const recognised = parts.every((part) => {
+    const colon = part.indexOf(":");
+    return colon > 0 &&
+      MARKDOWN_META_KEYS.includes(part.slice(0, colon).trim().toLowerCase());
+  });
+  if (!recognised) {
+    return null;
+  }
+  const meta = {};
+  parts.forEach((part) => {
+    const colon = part.indexOf(":");
+    meta[part.slice(0, colon).trim().toLowerCase()] = part.slice(colon + 1).trim();
+  });
+  return meta;
+}
+
+function parseMarkdownTaskLine(line) {
+  const checkbox = MARKDOWN_TASK_RE.exec(line);
+  if (!checkbox) {
+    return null;
+  }
+  let rest = line.slice(checkbox[0].length);
+
+  let meta = {};
+  const metaMatch = MARKDOWN_META_RE.exec(rest);
+  if (metaMatch) {
+    const parsed = parseMarkdownMetadata(metaMatch[1]);
+    if (parsed) {
+      meta = parsed;
+      rest = rest.slice(0, metaMatch.index);
+    }
+  }
+
+  let tag = "";
+  const tagMatch = MARKDOWN_TAG_RE.exec(rest);
+  if (tagMatch) {
+    tag = tagMatch[1];
+    rest = rest.slice(0, tagMatch.index);
+  }
+
+  const title = rest.trim();
+  if (!title) {
+    return null;
+  }
+
+  let dueDate = "";
+  let dueTime = "";
+  if (meta.due) {
+    // Split on whitespace, not ":" -- "due: 2026-09-11 14:00" used to be cut at
+    // the first colon, which turned 14:00 into 14 and dropped the minutes.
+    const [datePart, timePart] = meta.due.split(/\s+/);
+    dueDate = datePart || "";
+    dueTime = timePart || "";
+  }
+
+  const now = new Date().toISOString();
+  return normalizeTask({
+    id: generateId(),
+    title,
+    notes: "",
+    priority: meta.priority ? normalizePriority(meta.priority) : "medium",
+    category: meta.category ? normalizeCategory(meta.category) : "work",
+    tag,
+    dueDate,
+    dueTime,
+    recurrence: meta.recurrence ? normalizeRecurrence(meta.recurrence) : "",
+    completed: checkbox[1].toLowerCase() === "x",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+function parseMarkdown(text) {
+  const imported = [];
+  text.split(/\r?\n/).forEach((line) => {
+    const task = parseMarkdownTaskLine(line);
+    if (task) {
+      imported.push(task);
+      return;
+    }
+    // Only an *indented* line following a task is that task's notes, which is
+    // what markdown requires for a list continuation anyway. Unindented prose
+    // around the checklist is left alone rather than swallowed into a task.
+    const trimmed = line.trim();
+    if (trimmed && imported.length && /^\s/.test(line)) {
+      const current = imported[imported.length - 1];
+      current.notes = current.notes ? `${current.notes}\n${trimmed}` : trimmed;
+    }
+  });
+  return imported;
 }
 
 function importMarkdown() {
@@ -669,58 +962,31 @@ function importMarkdown() {
   if (!text) {
     return;
   }
-  const lines = text.split(/\r?\n/).filter(Boolean);
-  const imported = lines.map((line) => {
-    const completed = line.startsWith("- [x]") || line.startsWith("- [X]");
-    const content = line.replace(/^\s*- \[[ xX]\]\s*/, "");
+  const imported = parseMarkdown(text);
+  if (!imported.length) {
+    return;
+  }
 
-    const metadataMatch = content.match(/\(([^)]+)\)$/);
-    const metadata = metadataMatch ? metadataMatch[1] : "";
-    const metadataParts = metadata.split(",").map((part) => part.trim());
-
-    const priorityPart = metadataParts.find((part) => part.toLowerCase().startsWith("priority:"));
-    const categoryPart = metadataParts.find((part) => part.toLowerCase().startsWith("category:"));
-    const duePart = metadataParts.find((part) => part.toLowerCase().startsWith("due:"));
-    const recurrencePart = metadataParts.find((part) => part.toLowerCase().startsWith("recurrence:"));
-
-    const priority = priorityPart ? normalizePriority(priorityPart.split(":")[1].trim()) : "medium";
-    const category = categoryPart ? normalizeCategory(categoryPart.split(":")[1].trim()) : "work";
-    const recurrence = recurrencePart ? normalizeRecurrence(recurrencePart.split(":")[1].trim()) : "";
-
-    let dueDate = "";
-    let dueTime = "";
-    if (duePart) {
-      const dueValue = duePart.split(":")[1].trim();
-      const [datePart, timePart] = dueValue.split(" ");
-      dueDate = datePart;
-      dueTime = timePart || "";
+  // Re-importing your own export should not double every task. The markdown
+  // carries no ids, so identity here is title plus due date and time -- two
+  // genuinely different tasks agreeing on all three is unlikely, and the cost
+  // of being wrong is a task you have to add again rather than a silent loss.
+  const identity = (task) =>
+    [task.title, task.dueDate, task.dueTime].join("\u0000");
+  const seen = new Set(liveTasks().map(identity));
+  const fresh = imported.filter((task) => {
+    const key = identity(task);
+    if (seen.has(key)) {
+      return false;
     }
-
-    const contentWithoutMetadata = metadataMatch ? content.replace(metadataMatch[0], "").trim() : content;
-
-    const tagMatch = contentWithoutMetadata.match(/#\w[\w-]*/);
-    const tag = tagMatch ? tagMatch[0] : "";
-
-    const [titlePart, notesPart] = contentWithoutMetadata.split(" — ");
-    const title = (titlePart || "Untitled").replace(tag, "").trim();
-    const notes = notesPart ? notesPart.trim() : "";
-
-    return {
-      id: generateId(),
-      title,
-      notes,
-      priority,
-      category,
-      tag,
-      dueDate,
-      dueTime,
-      recurrence,
-      completed,
-      createdAt: new Date().toISOString(),
-    };
+    seen.add(key);
+    return true;
   });
 
-  tasks = [...imported, ...tasks];
+  if (!fresh.length) {
+    return;
+  }
+  tasks = [...fresh, ...tasks];
   saveTasks();
   render();
 }
@@ -742,7 +1008,7 @@ function handleFilterClick(event) {
   filterButtons.forEach((button) => button.classList.remove("active"));
   target.classList.add("active");
   activeFilter = target.dataset.filter || "all";
-  render();
+  setActiveView("all");
 }
 
 function handleCategoryFilterClick(event) {
@@ -753,57 +1019,50 @@ function handleCategoryFilterClick(event) {
   categoryFilterButtons.forEach((button) => button.classList.remove("active"));
   target.classList.add("active");
   activeCategory = target.dataset.category || "";
-  render();
+  setActiveView("all");
 }
 
-function renderCalendar() {
-  const withDueDates = tasks
-    .filter((task) => task.dueDate)
-    .slice()
-    .sort((a, b) => {
-      const dateCompare = a.dueDate.localeCompare(b.dueDate);
-      if (dateCompare !== 0) return dateCompare;
-      return (a.dueTime || "").localeCompare(b.dueTime || "");
-    });
 
-  calendarEmpty.style.display = withDueDates.length ? "none" : "block";
-  const upcoming = withDueDates.reduce((acc, task) => {
-    acc[task.dueDate] = acc[task.dueDate] || [];
-    acc[task.dueDate].push(task);
-    return acc;
-  }, {});
+// --- Undo -------------------------------------------------------------------
+// Deletes are tombstones rather than removals, so undo is just clearing the
+// flag. A new updatedAt makes the restore win over the delete on other devices.
+let undoIds = [];
+let undoTimer = null;
 
-  calendarList.innerHTML = "";
+function showUndo(message, ids) {
+  if (!toast) return;
+  undoIds = ids;
+  toastMessage.textContent = message;
+  toast.hidden = false;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo, 8000);
+}
 
-  Object.entries(upcoming).forEach(([date, dateTasks]) => {
-    const item = document.createElement("li");
-    const title = document.createElement("span");
-    title.textContent = date;
-    const detail = document.createElement("small");
+function hideUndo() {
+  if (!toast) return;
+  toast.hidden = true;
+  undoIds = [];
+}
 
-    // Show time range if tasks have times
-    const withTimes = dateTasks.filter(t => t.dueTime);
-    if (withTimes.length > 0) {
-      detail.textContent = `${dateTasks.length} task${dateTasks.length !== 1 ? "s" : ""} (${withTimes[0].dueTime}${withTimes.length > 1 ? '...' : ''})`;
-    } else {
-      detail.textContent = `${dateTasks.length} task${dateTasks.length !== 1 ? "s" : ""}`;
-    }
+function undoDelete() {
+  if (!undoIds.length) return;
+  const now = new Date().toISOString();
+  const ids = new Set(undoIds);
+  tasks = tasks.map((task) =>
+    ids.has(task.id)
+      ? { ...task, deleted: false, deletedAt: "", updatedAt: now }
+      : task
+  );
+  saveTasks();
+  render();
+  hideUndo();
+}
 
-    item.append(title, detail);
-    item.addEventListener("click", () => {
-      activeDate = date;
-      calendarDate.value = date;
-      render();
-    });
-    calendarList.append(item);
-  });
-
-  if (!activeDate) {
-    calendarSummary.textContent = "No date selected.";
-  } else {
-    const count = tasks.filter((task) => task.dueDate === activeDate).length;
-    calendarSummary.textContent = `Showing ${count} task${count !== 1 ? "s" : ""} due on ${activeDate}.`;
-  }
+function handleClearCompleted() {
+  const ids = liveTasks().filter((task) => task.completed).map((task) => task.id);
+  if (!ids.length) return;
+  clearCompleted();
+  showUndo(`Cleared ${ids.length} completed task${ids.length !== 1 ? "s" : ""}`, ids);
 }
 
 // Event listeners
@@ -826,8 +1085,21 @@ taskForm.addEventListener("submit", (event) => {
 
 filterButtons.forEach((button) => button.addEventListener("click", handleFilterClick));
 categoryFilterButtons.forEach((button) => button.addEventListener("click", handleCategoryFilterClick));
-searchInput.addEventListener("input", render);
-clearCompletedButton.addEventListener("click", clearCompleted);
+clearCompletedButton.addEventListener("click", handleClearCompleted);
+
+// View tabs
+tabButtons.forEach((button) =>
+  button.addEventListener("click", () => setActiveView(button.dataset.view))
+);
+
+// Searching re-renders on a short delay rather than on every keystroke.
+let searchTimer = null;
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(render, 150);
+});
+
+if (toastAction) toastAction.addEventListener("click", undoDelete);
 exportMarkdownButton.addEventListener("click", exportMarkdown);
 importMarkdownButton.addEventListener("click", importMarkdown);
 copyMarkdownButton.addEventListener("click", copyMarkdown);
@@ -862,7 +1134,7 @@ templateButtons.forEach((button) => {
 // Calendar
 calendarDate.addEventListener("change", () => {
   activeDate = calendarDate.value;
-  render();
+  setActiveView("all");
 });
 clearDateFilterButton.addEventListener("click", () => {
   activeDate = "";
@@ -875,14 +1147,14 @@ function exportJson() {
   const dataStr = JSON.stringify({
     tasks: tasks,
     exportDate: new Date().toISOString(),
-    version: "1.0"
+    version: SCHEMA_VERSION
   }, null, 2);
 
   const blob = new Blob([dataStr], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `medtodo-backup-${new Date().toISOString().split('T')[0]}.json`;
+  link.download = `medtodo-backup-${todayString()}.json`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -935,7 +1207,7 @@ function importJson(event) {
 
 // ICS Calendar Export
 function exportToCalendar() {
-  const tasksWithDates = tasks.filter(task => task.dueDate && !task.completed);
+  const tasksWithDates = liveTasks().filter(task => task.dueDate && !task.completed);
 
   if (tasksWithDates.length === 0) {
     alert('No tasks with due dates to export.\n\nAdd due dates to tasks first, then export to calendar.');
@@ -1009,7 +1281,7 @@ function exportToCalendar() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `medtodo-calendar-${new Date().toISOString().split('T')[0]}.ics`;
+  link.download = `medtodo-calendar-${todayString()}.ics`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1020,8 +1292,8 @@ function exportToCalendar() {
 
 // Get today's tasks sorted by time
 function getTodaysTasks() {
-  const today = new Date().toISOString().split('T')[0];
-  return tasks
+  const today = todayString();
+  return liveTasks()
     .filter(task => task.dueDate === today && !task.completed)
     .sort((a, b) => {
       if (a.dueTime && b.dueTime) {
@@ -1037,16 +1309,17 @@ function getTodaysTasks() {
 function getWeekTasks() {
   const today = new Date();
   const weekTasks = {};
+  const live = liveTasks();
 
   for (let i = 0; i < 7; i++) {
     const date = new Date(today);
     date.setDate(today.getDate() + i);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = toLocalDateString(date);
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
     weekTasks[dateStr] = {
       dayName,
-      tasks: tasks
+      tasks: live
         .filter(task => task.dueDate === dateStr && !task.completed)
         .sort((a, b) => (a.dueTime || '').localeCompare(b.dueTime || ''))
     };
@@ -1058,71 +1331,79 @@ function getWeekTasks() {
 // Render Today's Schedule
 function renderTodaySchedule() {
   const todayTasks = getTodaysTasks();
+  todaySchedule.replaceChildren();
 
   if (todayTasks.length === 0) {
-    todaySchedule.innerHTML = '<p class="muted">No tasks scheduled for today.</p>';
-    todayCount.textContent = '';
+    todaySchedule.append(el("p", "muted", "No tasks scheduled for today."));
     return;
   }
 
-  todayCount.textContent = `${todayTasks.length} task${todayTasks.length !== 1 ? 's' : ''}`;
+  todayTasks.forEach((task) => {
+    const item = el("div", "schedule-item");
+    item.append(el("span", "schedule-time", task.dueTime || "No time"));
 
-  todaySchedule.innerHTML = todayTasks.map(task => `
-    <div class="schedule-item">
-      <span class="schedule-time">${task.dueTime || 'No time'}</span>
-      <div class="schedule-task">
-        <span class="schedule-title">${task.title}</span>
-        <div class="schedule-meta">
-          <span class="badge badge-${task.category}">${task.category}</span>
-          <span class="badge badge-priority-${task.priority}">${task.priority}</span>
-        </div>
-      </div>
-    </div>
-  `).join('');
+    const body = el("div", "schedule-task");
+    body.append(el("span", "schedule-title", task.title));
+
+    const meta = el("div", "schedule-meta");
+    if (task.category) {
+      meta.append(el("span", `badge badge-${task.category}`, task.category));
+    }
+    if (task.priority) {
+      meta.append(el("span", `badge badge-priority-${task.priority}`, task.priority));
+    }
+    body.append(meta);
+    item.append(body);
+
+    todaySchedule.append(item);
+  });
 }
 
 // Render Week View
 function renderWeekView() {
-  const weekTasks = getWeekTasks();
-  const entries = Object.entries(weekTasks);
+  const entries = Object.entries(getWeekTasks());
+  weekView.replaceChildren();
 
-  const hasAnyTasks = entries.some(([_, data]) => data.tasks.length > 0);
-
-  if (!hasAnyTasks) {
-    weekView.innerHTML = '<p class="muted">No tasks scheduled this week.</p>';
+  if (!entries.some(([, data]) => data.tasks.length > 0)) {
+    weekView.append(el("p", "muted", "No tasks scheduled this week."));
     return;
   }
 
-  weekView.innerHTML = entries.map(([dateStr, data]) => {
+  entries.forEach(([, data]) => {
+    const day = el("div", "week-day");
+    const header = el("div", "week-day-header");
+    header.append(el("span", "week-day-name", data.dayName));
+
     if (data.tasks.length === 0) {
-      return `
-        <div class="week-day">
-          <div class="week-day-header">
-            <span class="week-day-name">${data.dayName}</span>
-            <span class="week-day-count muted">No tasks</span>
-          </div>
-        </div>
-      `;
+      header.append(el("span", "week-day-count muted", "No tasks"));
+      day.append(header);
+      weekView.append(day);
+      return;
     }
 
-    return `
-      <div class="week-day">
-        <div class="week-day-header">
-          <span class="week-day-name">${data.dayName}</span>
-          <span class="week-day-count">${data.tasks.length} task${data.tasks.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="week-day-tasks">
-          ${data.tasks.map(task => `
-            <div class="week-task">
-              <span class="week-task-time">${task.dueTime || '—'}</span>
-              <span class="week-task-title">${task.title}</span>
-              <span class="badge badge-priority-${task.priority}">${task.priority}</span>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-  }).join('');
+    header.append(
+      el(
+        "span",
+        "week-day-count",
+        `${data.tasks.length} task${data.tasks.length !== 1 ? "s" : ""}`
+      )
+    );
+    day.append(header);
+
+    const list = el("div", "week-day-tasks");
+    data.tasks.forEach((task) => {
+      const row = el("div", "week-task");
+      row.append(el("span", "week-task-time", task.dueTime || "—"));
+      row.append(el("span", "week-task-title", task.title));
+      row.append(
+        el("span", `badge badge-priority-${task.priority}`, task.priority)
+      );
+      list.append(row);
+    });
+    day.append(list);
+
+    weekView.append(day);
+  });
 }
 
 // Calendar export event listener
@@ -1147,5 +1428,93 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// Bridge for sync.js, which is loaded after this file. `tasks` is a module-level
+// `let`, so it is not reachable from another script without an explicit accessor.
+window.MedTodoStore = {
+  getTasks: () => tasks,
+  setTasks(next) {
+    tasks = next.map(normalizeTask);
+    saveTasks();
+    render();
+  },
+  mergeTaskLists,
+  normalizeTask,
+};
+
+// --- Seasonal theme ---------------------------------------------------------
+// Meteorological seasons, northern hemisphere. The chip in the header cycles
+// through Auto and the four seasons, so anyone south of the equator (or just
+// bored of the current one) can pin whichever they like.
+const SEASON_KEY = "todo.season";
+const SEASONS = ["spring", "summer", "autumn", "winter"];
+const SEASON_LABELS = {
+  spring: "🌸 Spring",
+  summer: "☀️ Summer",
+  autumn: "🍂 Autumn",
+  winter: "❄️ Winter",
+};
+const SEASON_THEME_COLORS = {
+  spring: "#7fb069",
+  summer: "#f0a830",
+  autumn: "#c96a2b",
+  winter: "#5b8db8",
+};
+
+function seasonForDate(date) {
+  const month = date.getMonth();
+  if (month >= 2 && month <= 4) return "spring";
+  if (month >= 5 && month <= 7) return "summer";
+  if (month >= 8 && month <= 10) return "autumn";
+  return "winter";
+}
+
+function loadSeasonPreference() {
+  try {
+    const stored = localStorage.getItem(SEASON_KEY);
+    return stored === "auto" || SEASONS.includes(stored) ? stored : "auto";
+  } catch (error) {
+    return "auto";
+  }
+}
+
+function resolveSeason(preference, date) {
+  return SEASONS.includes(preference) ? preference : seasonForDate(date);
+}
+
+function applySeason() {
+  const preference = loadSeasonPreference();
+  const season = resolveSeason(preference, new Date());
+  const pinned = preference !== "auto";
+
+  document.documentElement.dataset.season = season;
+
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.setAttribute("content", SEASON_THEME_COLORS[season]);
+
+  if (seasonChip) {
+    seasonChip.textContent = SEASON_LABELS[season];
+    seasonChip.classList.toggle("season-chip--pinned", pinned);
+    seasonChip.title = pinned
+      ? `Season pinned to ${season}. Click to change; keep clicking to return to automatic.`
+      : `${SEASON_LABELS[season].split(" ")[1]}, following the calendar. Click to pick a different one.`;
+  }
+  return season;
+}
+
+function cycleSeason() {
+  const order = ["auto"].concat(SEASONS);
+  const next = order[(order.indexOf(loadSeasonPreference()) + 1) % order.length];
+  try {
+    localStorage.setItem(SEASON_KEY, next);
+  } catch (error) {
+    console.warn("Unable to save season preference", error);
+  }
+  applySeason();
+}
+
+if (seasonChip) seasonChip.addEventListener("click", cycleSeason);
+applySeason();
+
 // Initial render
-render();
+setActiveView(activeView);
+

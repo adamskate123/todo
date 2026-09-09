@@ -28,6 +28,84 @@ A versatile, mobile-first Progressive Web App (PWA) designed for busy profession
 - **Search & Filter**: Find tasks by keyword, category, status, or date
 - **Obsidian Integration**: Export/import Markdown checklists for note-taking sync
 
+## 📝 Obsidian markdown
+
+**Export to Markdown** writes a checklist you can paste into an Obsidian note;
+**Import from Markdown** reads one back. Notes sit on an indented line beneath
+their task, so a title may contain anything — em dashes, brackets, `#` — without
+confusing the parser.
+
+```markdown
+- [ ] Clinic — new patient consults #clinic (priority: high, category: clinical, due: 2026-09-09 08:30)
+      bring films, then chart
+```
+
+Re-importing your own export is a no-op rather than a duplicate: since the
+markdown carries no ids, a task is considered the same when its title, due date
+and due time all match.
+
+## 🍂 Seasons
+
+The backdrop changes with the calendar — blossoms in spring, warm sun in summer,
+falling leaves in autumn, snowflakes in winter — using meteorological seasons
+(spring starts 1 March, and so on) in the **northern hemisphere**.
+
+The chip in the header shows the current season. Click it to cycle through the
+four seasons and back to automatic; a pinned season is outlined and remembered
+on that device. Southern-hemisphere users can just pin the opposite season.
+
+Only the page backdrop and one accent colour change. Priority, category, and
+button colours stay fixed, so nothing that carries meaning shifts with the time
+of year. The artwork is inline SVG in the stylesheet — no image downloads, and
+it works offline. There is no animation.
+
+## 🗓 The main view
+
+The app opens on **Schedule**, with three tabs:
+
+- **Today** — what is due today, in time order, with a count on the tab
+- **Week** — the next seven days, grouped by day
+- **All** — the full list with search, status and category filters, and a
+  jump-to-date control
+
+Everything else — the full add-task form, templates, calendar export, Obsidian,
+and manual backup — is tucked into collapsible sections below, so the daily view
+is the first thing on screen rather than the sixth.
+
+Deleting a task, or clearing completed ones, shows an **Undo** for a few
+seconds. Deletes are tombstones rather than removals, so undo is exact and the
+restore also wins on your other devices.
+
+## 🔄 Device Sync
+
+Tasks are stored locally and can sync across your devices. The app encrypts them
+in the browser before uploading, so the server only ever holds ciphertext.
+
+**Tasks in the Clinical category are never uploaded** — they stay only on the
+device that created them.
+
+See **[SYNC_SETUP.md](SYNC_SETUP.md)** for step-by-step setup (about five
+minutes, once).
+
+> The encryption protects data at rest on the server. It does not protect
+> against someone using your already-unlocked device. GitHub does not sign
+> Business Associate Agreements; check with your institution's privacy office
+> before syncing anything patient-identifiable.
+
+## 🧪 Tests
+
+No dependencies and no build step:
+
+```bash
+npm test          # or: node test/app.test.js && node test/sync.test.js
+```
+
+The suites evaluate the real `app.js` and `sync.js` against a DOM stub and a
+frozen clock, so they exercise the shipping files rather than copies of their
+logic. They cover local-vs-UTC date handling, merge and tombstone semantics,
+markup-safe rendering, and the guarantee that clinical tasks never reach the
+network.
+
 ## 🚀 Quick Start
 
 ### Installation Options
