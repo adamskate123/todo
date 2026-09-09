@@ -59,6 +59,19 @@ button colours stay fixed, so nothing that carries meaning shifts with the time
 of year. The artwork is inline SVG in the stylesheet — no image downloads, and
 it works offline. There is no animation.
 
+## 🔢 Version badge
+
+A small version badge sits next to the title. It is rendered from `APP_VERSION`
+inside `app.js`, so if the number changes you know the browser loaded the new
+file rather than a cached copy — which is the usual question after a deploy.
+
+The service worker builds its cache name from the same constant, so one bump
+both invalidates the cache and updates what you see. `package.json` carries it
+too, and a test fails if the three ever disagree.
+
+To release: change `APP_VERSION` in `app.js`, `service-worker.js` and
+`package.json`, then run `npm test` — it will tell you if you missed one.
+
 ## 🗓 The main view
 
 The app opens on **Schedule**, with three tabs:

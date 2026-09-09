@@ -1,4 +1,6 @@
-const CACHE_NAME = 'medtodo-v9';
+// Keep in step with APP_VERSION in app.js; a test fails if they drift.
+const APP_VERSION = '2.1.0';
+const CACHE_NAME = `medtodo-v${APP_VERSION}`;
 const urlsToCache = [
   './',
   './index.html',
