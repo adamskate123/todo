@@ -28,6 +28,22 @@ A versatile, mobile-first Progressive Web App (PWA) designed for busy profession
 - **Search & Filter**: Find tasks by keyword, category, status, or date
 - **Obsidian Integration**: Export/import Markdown checklists for note-taking sync
 
+## 📝 Obsidian markdown
+
+**Export to Markdown** writes a checklist you can paste into an Obsidian note;
+**Import from Markdown** reads one back. Notes sit on an indented line beneath
+their task, so a title may contain anything — em dashes, brackets, `#` — without
+confusing the parser.
+
+```markdown
+- [ ] Clinic — new patient consults #clinic (priority: high, category: clinical, due: 2026-09-09 08:30)
+      bring films, then chart
+```
+
+Re-importing your own export is a no-op rather than a duplicate: since the
+markdown carries no ids, a task is considered the same when its title, due date
+and due time all match.
+
 ## 🍂 Seasons
 
 The backdrop changes with the calendar — blossoms in spring, warm sun in summer,

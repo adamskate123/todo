@@ -816,29 +816,145 @@ function applyTemplate(templateName) {
   taskInput.focus();
 }
 
+// --- Obsidian markdown ------------------------------------------------------
+// Notes sit on an indented continuation line rather than after a dash on the
+// task line. The old " — " separator was ambiguous: a title containing an em
+// dash ("Clinic — new patient consults") was split at the wrong place, so the
+// title was truncated and the rest of it became the notes.
+const MARKDOWN_META_KEYS = ["priority", "category", "due", "recurrence"];
+const MARKDOWN_TASK_RE = /^\s*[-*] \[([ xX])\]\s*/;
+// Anchored at end of line, and unable to cross a nested parenthesis, so the
+// metadata block is found even when the title itself ends in brackets.
+const MARKDOWN_META_RE = /\(([^()]*)\)\s*$/;
+// Only a tag at the very end is treated as one, so a "#" inside a title stays.
+const MARKDOWN_TAG_RE = /\s(#[\w-]+)\s*$/;
+
 function exportMarkdown() {
-  const lines = tasks
+  const lines = [];
+  liveTasks()
     .slice()
     .reverse()
-    .map((task) => {
+    .forEach((task) => {
       const checkbox = task.completed ? "- [x]" : "- [ ]";
-      const notes = task.notes ? ` — ${task.notes}` : "";
       const tag = task.tag ? ` ${task.tag}` : "";
       const metaParts = [
         `priority: ${task.priority}`,
         `category: ${task.category}`,
       ];
       if (task.dueDate) {
-        const dateTime = task.dueTime ? `${task.dueDate} ${task.dueTime}` : task.dueDate;
-        metaParts.push(`due: ${dateTime}`);
+        metaParts.push(
+          `due: ${task.dueTime ? `${task.dueDate} ${task.dueTime}` : task.dueDate}`
+        );
       }
       if (task.recurrence) {
         metaParts.push(`recurrence: ${task.recurrence}`);
       }
-      const metadata = ` (${metaParts.join(", ")})`;
-      return `${checkbox} ${task.title}${notes}${tag}${metadata}`;
+      lines.push(`${checkbox} ${task.title}${tag} (${metaParts.join(", ")})`);
+      if (task.notes) {
+        // Indented, so Obsidian renders it as part of the list item.
+        task.notes.split(/\r?\n/).forEach((note) => lines.push(`      ${note}`));
+      }
     });
   markdownArea.value = lines.join("\n");
+}
+
+// A trailing parenthesis counts as metadata only when every part is a known
+// key, so a title like "Review protocol (draft)" is left intact.
+function parseMarkdownMetadata(text) {
+  const parts = text.split(",").map((part) => part.trim()).filter(Boolean);
+  if (!parts.length) {
+    return null;
+  }
+  const recognised = parts.every((part) => {
+    const colon = part.indexOf(":");
+    return colon > 0 &&
+      MARKDOWN_META_KEYS.includes(part.slice(0, colon).trim().toLowerCase());
+  });
+  if (!recognised) {
+    return null;
+  }
+  const meta = {};
+  parts.forEach((part) => {
+    const colon = part.indexOf(":");
+    meta[part.slice(0, colon).trim().toLowerCase()] = part.slice(colon + 1).trim();
+  });
+  return meta;
+}
+
+function parseMarkdownTaskLine(line) {
+  const checkbox = MARKDOWN_TASK_RE.exec(line);
+  if (!checkbox) {
+    return null;
+  }
+  let rest = line.slice(checkbox[0].length);
+
+  let meta = {};
+  const metaMatch = MARKDOWN_META_RE.exec(rest);
+  if (metaMatch) {
+    const parsed = parseMarkdownMetadata(metaMatch[1]);
+    if (parsed) {
+      meta = parsed;
+      rest = rest.slice(0, metaMatch.index);
+    }
+  }
+
+  let tag = "";
+  const tagMatch = MARKDOWN_TAG_RE.exec(rest);
+  if (tagMatch) {
+    tag = tagMatch[1];
+    rest = rest.slice(0, tagMatch.index);
+  }
+
+  const title = rest.trim();
+  if (!title) {
+    return null;
+  }
+
+  let dueDate = "";
+  let dueTime = "";
+  if (meta.due) {
+    // Split on whitespace, not ":" -- "due: 2026-09-11 14:00" used to be cut at
+    // the first colon, which turned 14:00 into 14 and dropped the minutes.
+    const [datePart, timePart] = meta.due.split(/\s+/);
+    dueDate = datePart || "";
+    dueTime = timePart || "";
+  }
+
+  const now = new Date().toISOString();
+  return normalizeTask({
+    id: generateId(),
+    title,
+    notes: "",
+    priority: meta.priority ? normalizePriority(meta.priority) : "medium",
+    category: meta.category ? normalizeCategory(meta.category) : "work",
+    tag,
+    dueDate,
+    dueTime,
+    recurrence: meta.recurrence ? normalizeRecurrence(meta.recurrence) : "",
+    completed: checkbox[1].toLowerCase() === "x",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+function parseMarkdown(text) {
+  const imported = [];
+  text.split(/\r?\n/).forEach((line) => {
+    const task = parseMarkdownTaskLine(line);
+    if (task) {
+      imported.push(task);
+      return;
+    }
+    // Only an *indented* line following a task is that task's notes, which is
+    // what markdown requires for a list continuation anyway. Unindented prose
+    // around the checklist is left alone rather than swallowed into a task.
+    const trimmed = line.trim();
+    if (trimmed && imported.length && /^\s/.test(line)) {
+      const current = imported[imported.length - 1];
+      current.notes = current.notes ? `${current.notes}\n${trimmed}` : trimmed;
+    }
+  });
+  return imported;
 }
 
 function importMarkdown() {
@@ -846,58 +962,31 @@ function importMarkdown() {
   if (!text) {
     return;
   }
-  const lines = text.split(/\r?\n/).filter(Boolean);
-  const imported = lines.map((line) => {
-    const completed = line.startsWith("- [x]") || line.startsWith("- [X]");
-    const content = line.replace(/^\s*- \[[ xX]\]\s*/, "");
+  const imported = parseMarkdown(text);
+  if (!imported.length) {
+    return;
+  }
 
-    const metadataMatch = content.match(/\(([^)]+)\)$/);
-    const metadata = metadataMatch ? metadataMatch[1] : "";
-    const metadataParts = metadata.split(",").map((part) => part.trim());
-
-    const priorityPart = metadataParts.find((part) => part.toLowerCase().startsWith("priority:"));
-    const categoryPart = metadataParts.find((part) => part.toLowerCase().startsWith("category:"));
-    const duePart = metadataParts.find((part) => part.toLowerCase().startsWith("due:"));
-    const recurrencePart = metadataParts.find((part) => part.toLowerCase().startsWith("recurrence:"));
-
-    const priority = priorityPart ? normalizePriority(priorityPart.split(":")[1].trim()) : "medium";
-    const category = categoryPart ? normalizeCategory(categoryPart.split(":")[1].trim()) : "work";
-    const recurrence = recurrencePart ? normalizeRecurrence(recurrencePart.split(":")[1].trim()) : "";
-
-    let dueDate = "";
-    let dueTime = "";
-    if (duePart) {
-      const dueValue = duePart.split(":")[1].trim();
-      const [datePart, timePart] = dueValue.split(" ");
-      dueDate = datePart;
-      dueTime = timePart || "";
+  // Re-importing your own export should not double every task. The markdown
+  // carries no ids, so identity here is title plus due date and time -- two
+  // genuinely different tasks agreeing on all three is unlikely, and the cost
+  // of being wrong is a task you have to add again rather than a silent loss.
+  const identity = (task) =>
+    [task.title, task.dueDate, task.dueTime].join("\u0000");
+  const seen = new Set(liveTasks().map(identity));
+  const fresh = imported.filter((task) => {
+    const key = identity(task);
+    if (seen.has(key)) {
+      return false;
     }
-
-    const contentWithoutMetadata = metadataMatch ? content.replace(metadataMatch[0], "").trim() : content;
-
-    const tagMatch = contentWithoutMetadata.match(/#\w[\w-]*/);
-    const tag = tagMatch ? tagMatch[0] : "";
-
-    const [titlePart, notesPart] = contentWithoutMetadata.split(" — ");
-    const title = (titlePart || "Untitled").replace(tag, "").trim();
-    const notes = notesPart ? notesPart.trim() : "";
-
-    return {
-      id: generateId(),
-      title,
-      notes,
-      priority,
-      category,
-      tag,
-      dueDate,
-      dueTime,
-      recurrence,
-      completed,
-      createdAt: new Date().toISOString(),
-    };
+    seen.add(key);
+    return true;
   });
 
-  tasks = [...imported, ...tasks];
+  if (!fresh.length) {
+    return;
+  }
+  tasks = [...fresh, ...tasks];
   saveTasks();
   render();
 }

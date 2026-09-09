@@ -354,4 +354,171 @@ test("a stored season wins over the calendar on load", () => {
   assertEqual(context.document.documentElement.dataset.season, "winter");
 });
 
+// --- Obsidian markdown round trip -------------------------------------------
+function markdownFixture(tasks) {
+  const app = loadApp(EVENING, tasks);
+  app.api.exportMarkdown();
+  return { app, markdown: app.elements.get("#markdown-area").value };
+}
+
+function makeTask(overrides) {
+  return Object.assign({
+    id: "t1", title: "A task", notes: "", priority: "medium", category: "work",
+    tag: "", dueDate: "", dueTime: "", recurrence: "", completed: false,
+    createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-02T00:00:00.000Z",
+    deleted: false,
+  }, overrides);
+}
+
+test("a title containing an em dash survives the round trip", () => {
+  // The old parser split on " — " and truncated the title at the dash.
+  const { markdown } = markdownFixture([
+    makeTask({ title: "Clinic — new patient consults", category: "clinical" }),
+  ]);
+  const back = loadApp(EVENING).api.parseMarkdown(markdown);
+  assertEqual(back.length, 1);
+  assertEqual(back[0].title, "Clinic — new patient consults");
+  assertEqual(back[0].notes, "", "the tail of the title must not become notes");
+});
+
+test("a due time keeps its minutes", () => {
+  // "due: 2026-09-11 14:00" used to be cut at the first colon, leaving "14".
+  const { markdown } = markdownFixture([
+    makeTask({ title: "Grant call", dueDate: "2026-09-11", dueTime: "14:30" }),
+  ]);
+  const back = loadApp(EVENING).api.parseMarkdown(markdown)[0];
+  assertEqual(back.dueDate, "2026-09-11");
+  assertEqual(back.dueTime, "14:30");
+});
+
+test("notes round-trip on their own line", () => {
+  const { markdown } = markdownFixture([
+    makeTask({ title: "Call family", notes: "ask re: meds (levetiracetam), then chart" }),
+  ]);
+  const back = loadApp(EVENING).api.parseMarkdown(markdown)[0];
+  assertEqual(back.notes, "ask re: meds (levetiracetam), then chart");
+  assertEqual(back.title, "Call family");
+});
+
+test("a tag is not stripped out of the middle of a title", () => {
+  const { markdown } = markdownFixture([
+    makeTask({ title: "Follow up on #3 from rounds", tag: "#clinic" }),
+  ]);
+  const back = loadApp(EVENING).api.parseMarkdown(markdown)[0];
+  assertEqual(back.title, "Follow up on #3 from rounds");
+  assertEqual(back.tag, "#clinic");
+});
+
+test("a title ending in brackets is not mistaken for metadata", () => {
+  const { markdown } = markdownFixture([
+    makeTask({ title: "Review protocol (draft)", category: "research" }),
+  ]);
+  const back = loadApp(EVENING).api.parseMarkdown(markdown)[0];
+  assertEqual(back.title, "Review protocol (draft)");
+  assertEqual(back.category, "research", "the real metadata should still be read");
+});
+
+test("every field survives a full round trip", () => {
+  const original = makeTask({
+    title: "Draft R01 aims — specific aims page", notes: "co-authors, then submit",
+    priority: "high", category: "research", tag: "#grant",
+    dueDate: "2026-09-11", dueTime: "09:05", recurrence: "weekly", completed: true,
+  });
+  const { markdown } = markdownFixture([original]);
+  const back = loadApp(EVENING).api.parseMarkdown(markdown)[0];
+  ["title", "notes", "priority", "category", "tag", "dueDate", "dueTime",
+   "recurrence", "completed"].forEach((field) => {
+    assertEqual(back[field], original[field], field + "\n    markdown: " + markdown);
+  });
+});
+
+test("deleted tasks are not exported", () => {
+  const { markdown } = markdownFixture([
+    makeTask({ id: "a", title: "Still here" }),
+    makeTask({ id: "b", title: "TOMBSTONE_CANARY", deleted: true,
+               deletedAt: "2026-09-05T00:00:00.000Z", updatedAt: "2026-09-05T00:00:00.000Z" }),
+  ]);
+  assert(markdown.includes("Still here"));
+  assert(!markdown.includes("TOMBSTONE_CANARY"), "a deleted task must not be exported");
+});
+
+test("imported tasks are normalized so sync can merge them", () => {
+  const back = loadApp(EVENING).api.parseMarkdown("- [ ] Typed by hand");
+  assertEqual(back.length, 1);
+  assert(back[0].id, "should be given an id");
+  assert(back[0].updatedAt, "should carry updatedAt or a later merge cannot order it");
+  assertEqual(back[0].deleted, false);
+});
+
+test("a hand-written checklist imports with sane defaults", () => {
+  const back = loadApp(EVENING).api.parseMarkdown("- [ ] Buy milk\n- [x] Call the school");
+  assertEqual(back.length, 2);
+  assertEqual(back[0].title, "Buy milk");
+  assertEqual(back[0].priority, "medium");
+  assertEqual(back[0].category, "work");
+  assertEqual(back[1].completed, true);
+});
+
+test("prose around the checklist is ignored, not turned into tasks", () => {
+  const doc = [
+    "# This week",
+    "",
+    "- [ ] A real task (priority: high, category: work)",
+    "      with a note",
+    "",
+    "Some closing prose.",
+  ].join("\n");
+  const back = loadApp(EVENING).api.parseMarkdown(doc);
+  assertEqual(back.length, 1, "only the checkbox line is a task");
+  assertEqual(back[0].notes, "with a note");
+});
+
+test("importMarkdown adds the parsed tasks to the list", () => {
+  const app = loadApp(EVENING, [makeTask({ id: "existing", title: "Already here" })]);
+  app.elements.get("#markdown-area").value =
+    "- [ ] From the note (priority: low, category: home)";
+  app.api.importMarkdown();
+  const titles = app.api.liveTasks().map((t) => t.title).sort();
+  assertEqual(titles.join(" | "), "Already here | From the note");
+});
+
+test("re-importing an export does not duplicate tasks", () => {
+  const app = loadApp(EVENING, [
+    makeTask({ id: "a", title: "Clinic — consults", dueDate: "2026-09-08", dueTime: "08:30" }),
+    makeTask({ id: "b", title: "Soccer pickup", dueDate: "2026-09-08", dueTime: "17:30" }),
+  ]);
+  app.api.exportMarkdown();
+  const markdown = app.elements.get("#markdown-area").value;
+
+  app.elements.get("#markdown-area").value = markdown;
+  app.api.importMarkdown();
+  assertEqual(app.api.liveTasks().length, 2, "importing your own export should be a no-op");
+
+  app.api.importMarkdown();
+  assertEqual(app.api.liveTasks().length, 2, "and still a no-op the second time");
+});
+
+test("a genuinely new task in the markdown is still imported", () => {
+  const app = loadApp(EVENING, [
+    makeTask({ id: "a", title: "Existing", dueDate: "2026-09-08", dueTime: "08:30" }),
+  ]);
+  app.elements.get("#markdown-area").value = [
+    "- [ ] Existing (priority: medium, category: work, due: 2026-09-08 08:30)",
+    "- [ ] Brand new (priority: high, category: home)",
+  ].join("\n");
+  app.api.importMarkdown();
+  const titles = app.api.liveTasks().map((x) => x.title).sort();
+  assertEqual(titles.join(" | "), "Brand new | Existing");
+});
+
+test("same title at a different time is treated as a different task", () => {
+  const app = loadApp(EVENING, [
+    makeTask({ id: "a", title: "Ward round", dueDate: "2026-09-08", dueTime: "08:00" }),
+  ]);
+  app.elements.get("#markdown-area").value =
+    "- [ ] Ward round (priority: medium, category: work, due: 2026-09-08 16:00)";
+  app.api.importMarkdown();
+  assertEqual(app.api.liveTasks().length, 2, "a second round that day is a real task");
+});
+
 report();
