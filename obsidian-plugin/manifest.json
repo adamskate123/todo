@@ -1,9 +1,0 @@
-{
-  "id": "medtodo",
-  "name": "MedTodo",
-  "version": "1.0.0",
-  "minAppVersion": "1.4.0",
-  "description": "Task manager for clinical, academic, and home work. Tasks live in your vault as a checklist; clinical tasks stay on the device.",
-  "author": "adamskate123",
-  "isDesktopOnly": false
-}

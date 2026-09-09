@@ -4,7 +4,6 @@
   "private": true,
   "description": "Task manager for clinical, academic, and home work. No build step, no dependencies.",
   "scripts": {
-    "test": "node test/app.test.js && node test/sync.test.js && node test/markdown.test.js && node test/plugin.test.js",
-    "build:plugin": "node tools/build-plugin.js"
+    "test": "node test/app.test.js && node test/sync.test.js"
   }
 }

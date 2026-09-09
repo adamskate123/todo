@@ -330,10 +330,10 @@ test("a pinned season overrides the calendar", () => {
   assertEqual(api.resolveSeason("nonsense", midsummer), "summer", "junk falls back to the calendar");
 });
 
-test("applySeason marks the container and labels the chip", () => {
-  const { api, elements, root } = loadApp(EVENING);
+test("applySeason marks the document and labels the chip", () => {
+  const { api, elements, context } = loadApp(EVENING);
   assertEqual(api.applySeason(), "autumn", "September should be autumn");
-  assertEqual(root.dataset.season, "autumn");
+  assertEqual(context.document.documentElement.dataset.season, "autumn");
   assertEqual(elements.get("#season-chip").textContent, "🍂 Autumn");
 });
 
@@ -348,10 +348,10 @@ test("the chip cycles through the seasons and back to automatic", () => {
 });
 
 test("a stored season wins over the calendar on load", () => {
-  const { api, store, root } = loadApp(EVENING);
+  const { api, store, context } = loadApp(EVENING);
   store.set("todo.season", "winter");
   assertEqual(api.applySeason(), "winter");
-  assertEqual(root.dataset.season, "winter");
+  assertEqual(context.document.documentElement.dataset.season, "winter");
 });
 
 report();

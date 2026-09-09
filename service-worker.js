@@ -1,9 +1,7 @@
-const CACHE_NAME = 'medtodo-v9';
+const CACHE_NAME = 'medtodo-v7';
 const urlsToCache = [
   './',
   './index.html',
-  './ui.js',
-  './todo-markdown.js',
   './app.js',
   './sync.js',
   './styles.css',

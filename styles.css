@@ -1154,28 +1154,28 @@ input[type="checkbox"] {
   --season-motif-opacity: 0.36;
 }
 
-[data-season="spring"] {
+:root[data-season="spring"] {
   --season-a: #f4faf1;
   --season-b: #fdf1f6;
   --season-accent: #7fb069;
   --season-motif: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><g opacity='.5'><g fill='%23edaac6'><circle cx='20' cy='15' r='3.6'/><circle cx='26' cy='20' r='3.6'/><circle cx='23.7' cy='27' r='3.6'/><circle cx='16.3' cy='27' r='3.6'/><circle cx='14' cy='20' r='3.6'/></g><circle cx='20' cy='21' r='2' fill='%23f7d97a'/><ellipse cx='57' cy='55' rx='9' ry='4' fill='%23a3cf9a' transform='rotate(-25 57 55)'/><circle cx='63' cy='20' r='2.5' fill='%23edaac6'/></g></svg>");
 }
 
-[data-season="summer"] {
+:root[data-season="summer"] {
   --season-a: #eff7fd;
   --season-b: #fdf7e9;
   --season-accent: #f0a830;
   --season-motif: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><g opacity='.45'><circle cx='22' cy='22' r='7' fill='%23f5c542'/><circle cx='58' cy='55' r='4.5' fill='%23f0a830'/><circle cx='63' cy='18' r='3' fill='%23ffd873'/><circle cx='16' cy='58' r='3.5' fill='%23f5c542'/></g></svg>");
 }
 
-[data-season="autumn"] {
+:root[data-season="autumn"] {
   --season-a: #fdf4e9;
   --season-b: #f9e9de;
   --season-accent: #c96a2b;
   --season-motif: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='75' height='75'><g opacity='.5'><ellipse cx='20' cy='20' rx='10' ry='5' fill='%23d98b45' transform='rotate(-35 20 20)'/><ellipse cx='55' cy='52' rx='9' ry='4.5' fill='%23c25e3a' transform='rotate(25 55 52)'/><ellipse cx='58' cy='16' rx='7' ry='3.5' fill='%23e0a95f' transform='rotate(-10 58 16)'/></g></svg>");
 }
 
-[data-season="winter"] {
+:root[data-season="winter"] {
   --season-a: #eff4fa;
   --season-b: #f6f8fb;
   --season-accent: #5b8db8;
@@ -1183,18 +1183,17 @@ input[type="checkbox"] {
 }
 
 @media (prefers-color-scheme: dark) {
-  [data-season="spring"] { --season-a: #101a13; --season-b: #17121b; }
-  [data-season="summer"] { --season-a: #0d1621; --season-b: #1a1710; }
-  [data-season="autumn"] { --season-a: #1a1310; --season-b: #15110e; }
-  [data-season="winter"] { --season-a: #0e131b; --season-b: #121821; }
+  :root[data-season="spring"] { --season-a: #101a13; --season-b: #17121b; }
+  :root[data-season="summer"] { --season-a: #0d1621; --season-b: #1a1710; }
+  :root[data-season="autumn"] { --season-a: #1a1310; --season-b: #15110e; }
+  :root[data-season="winter"] { --season-a: #0e131b; --season-b: #121821; }
 
   /* The motifs are drawn in light tints, so they need to sit back further
      against a dark page. */
   :root { --season-motif-opacity: 0.18; }
 }
 
-body.medtodo-page::before,
-body:not(.medtodo-page) .app::before {
+body::before {
   content: "";
   position: fixed;
   inset: 0;
@@ -1203,22 +1202,6 @@ body:not(.medtodo-page) .app::before {
   background-image: var(--season-motif);
   background-repeat: repeat;
   opacity: var(--season-motif-opacity);
-}
-
-/* Inside a plugin pane the backdrop belongs to the app container, not to the
-   host application's body. */
-body:not(.medtodo-page) .app {
-  min-height: 100%;
-  background-image: linear-gradient(
-    165deg,
-    var(--season-a, transparent) 0%,
-    var(--season-b, transparent) 60%,
-    var(--season-a, transparent) 100%
-  );
-}
-
-body:not(.medtodo-page) .app::before {
-  position: absolute;
 }
 
 .app {
