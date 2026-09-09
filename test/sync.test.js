@@ -241,4 +241,77 @@ test("a vault opens with the iteration count it was created with", async () => {
     "device B should have received the task");
 });
 
+// --- the app must go quiet when nothing has changed ------------------------
+test("applying a sync result does not schedule another sync", async () => {
+  const { fetchImpl } = makeGitHub();
+  const app = loadAppWithSync(NOW, [task("w1", "work", "a task")], fetchImpl);
+  await app.sync.connect({ owner: "o", repo: "r", token: "t", passphrase: "pw" });
+
+  // Writing merged tasks back calls saveTasks(), which asks for an autosync.
+  // Left unguarded, every sync queued the next one and the app uploaded forever.
+  const delays = [];
+  const realSetTimeout = app.context.setTimeout;
+  app.context.setTimeout = (fn, ms) => {
+    delays.push(ms);
+    return realSetTimeout(fn, ms);
+  };
+
+  await app.sync.runSync({ interactive: true });
+  assert(!delays.includes(8000),
+    "a sync must not queue another autosync; timers scheduled: " + delays.join(", "));
+});
+
+test("syncing unchanged tasks does not upload again", async () => {
+  const { state, fetchImpl } = makeGitHub();
+  const app = loadAppWithSync(NOW, [task("w1", "work", "a task")], fetchImpl);
+  await app.sync.connect({ owner: "o", repo: "r", token: "t", passphrase: "pw" });
+  const afterConnect = state.puts.length;
+  assertEqual(afterConnect, 1, "connecting should publish once");
+
+  await app.sync.runSync({ interactive: true });
+  await app.sync.runSync({ interactive: true });
+  assertEqual(state.puts.length, afterConnect,
+    "identical data must not be re-uploaded -- every upload is a commit");
+});
+
+test("a real change is still uploaded", async () => {
+  const { state, fetchImpl } = makeGitHub();
+  const app = loadAppWithSync(NOW, [task("w1", "work", "a task")], fetchImpl);
+  await app.sync.connect({ owner: "o", repo: "r", token: "t", passphrase: "pw" });
+  const before = state.puts.length;
+
+  app.api.addTask({
+    title: "Something new", notes: "", priority: "high", category: "work",
+    tag: "", dueDate: "", dueTime: "", recurrence: "",
+  });
+  await app.sync.runSync({ interactive: true });
+  assertEqual(state.puts.length, before + 1, "a genuine edit should publish");
+});
+
+test("a deletion counts as a change", async () => {
+  const { state, fetchImpl } = makeGitHub();
+  const app = loadAppWithSync(NOW, [task("w1", "work", "a task")], fetchImpl);
+  await app.sync.connect({ owner: "o", repo: "r", token: "t", passphrase: "pw" });
+  const before = state.puts.length;
+
+  app.api.deleteTask("w1");
+  await app.sync.runSync({ interactive: true });
+  assertEqual(state.puts.length, before + 1, "a delete must reach the other devices");
+});
+
+test("a clinical-only change never causes an upload", async () => {
+  const { state, fetchImpl } = makeGitHub();
+  const app = loadAppWithSync(NOW, [task("w1", "work", "a task")], fetchImpl);
+  await app.sync.connect({ owner: "o", repo: "r", token: "t", passphrase: "pw" });
+  const before = state.puts.length;
+
+  app.api.addTask({
+    title: "Patient callback", notes: "", priority: "high", category: "clinical",
+    tag: "", dueDate: "", dueTime: "", recurrence: "",
+  });
+  await app.sync.runSync({ interactive: true });
+  assertEqual(state.puts.length, before,
+    "a clinical task changes nothing the server should see");
+});
+
 report();

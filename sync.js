@@ -230,6 +230,22 @@
   }
 
   // ---------------------------------------------------------------- merging
+  // A stable representation of a task list, used to tell whether anything
+  // actually changed. Fields are listed explicitly and rows sorted by id, so
+  // neither key order nor merge order can make an identical set look different.
+  function canonicalize(list) {
+    return JSON.stringify(
+      list
+        .slice()
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((task) => [
+          task.id, task.title, task.notes, task.priority, task.category,
+          task.tag, task.dueDate, task.dueTime, task.recurrence,
+          Boolean(task.completed), Boolean(task.deleted), task.updatedAt,
+        ])
+    );
+  }
+
   function isPrivate(task) {
     return PRIVATE_CATEGORIES.indexOf(task.category) !== -1;
   }
@@ -254,12 +270,35 @@
   let status = { state: "idle", message: "" };
   let cachedKey = null;
   let syncing = false;
+  // Writing merged tasks back goes through saveTasks(), which asks for another
+  // autosync. Without this guard each sync scheduled the next one and the app
+  // uploaded forever on the debounce interval.
+  let applyingRemote = false;
   let autosyncTimer = null;
   const listeners = [];
 
   function setStatus(state, message) {
     status = { state, message };
     listeners.forEach((fn) => fn(status));
+  }
+
+  // Write merged tasks back without letting the resulting save schedule another
+  // sync.
+  function applyRemote(store, merged) {
+    applyingRemote = true;
+    try {
+      store.setTasks(merged);
+    } finally {
+      applyingRemote = false;
+    }
+  }
+
+  function describeSynced(store) {
+    const held = store.getTasks().filter(isPrivate).length;
+    return (
+      `Synced ${new Date().toLocaleTimeString()}` +
+      (held ? ` · ${held} clinical task${held !== 1 ? "s" : ""} kept on this device` : "")
+    );
   }
 
   async function keyFor(settings, saltBytes) {
@@ -309,12 +348,24 @@
         : [];
 
       const merged = mergeWithRemote(store.getTasks(), remoteTasks);
-      store.setTasks(merged);
+      applyRemote(store, merged);
+
+      const outgoing = syncableTasks(merged);
+      // Nothing to say? Then say nothing. Every upload is a commit, and the
+      // random IV means re-encrypting identical data still looks like a change
+      // to the server, so this has to be decided before encrypting.
+      if (remote && canonicalize(outgoing) === canonicalize(remoteTasks)) {
+        settings.saltB64 = bytesToBase64(saltBytes);
+        settings.lastSyncedAt = new Date().toISOString();
+        saveSettings(settings);
+        setStatus("ok", describeSynced(store));
+        return;
+      }
 
       const iterations = settings.iterations || defaultIterations;
       const envelope = await encryptJson(key, saltBytes, {
         version: 2,
-        tasks: syncableTasks(merged),
+        tasks: outgoing,
       }, iterations);
 
       try {
@@ -327,7 +378,7 @@
           ? (await decryptJson(key, remote.envelope)).tasks || []
           : [];
         const remerged = mergeWithRemote(store.getTasks(), retryTasks);
-        store.setTasks(remerged);
+        applyRemote(store, remerged);
         const retryEnvelope = await encryptJson(key, saltBytes, {
           version: 2,
           tasks: syncableTasks(remerged),
@@ -339,12 +390,7 @@
       settings.lastSyncedAt = new Date().toISOString();
       saveSettings(settings);
 
-      const held = store.getTasks().filter(isPrivate).length;
-      setStatus(
-        "ok",
-        `Synced ${new Date().toLocaleTimeString()}` +
-          (held ? ` · ${held} clinical task${held !== 1 ? "s" : ""} kept on this device` : "")
-      );
+      setStatus("ok", describeSynced(store));
     } catch (error) {
       const offline = typeof navigator !== "undefined" && navigator.onLine === false;
       setStatus(
@@ -359,6 +405,7 @@
   }
 
   function scheduleAutosync() {
+    if (applyingRemote) return;
     if (!loadSettings()) return;
     clearTimeout(autosyncTimer);
     autosyncTimer = setTimeout(() => runSync({ interactive: false }), AUTOSYNC_DEBOUNCE_MS);
