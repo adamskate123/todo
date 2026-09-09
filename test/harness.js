@@ -201,6 +201,7 @@ function loadApp(nowIso, seededTasks) {
       seasonForDate, resolveSeason, applySeason, cycleSeason, SEASONS,
       handleClearCompleted,
       exportMarkdown, importMarkdown, parseMarkdown, parseMarkdownTaskLine,
+      APP_VERSION, showAppVersion,
       getActiveView: () => activeView,
       setTasks: (t) => { tasks = t; },
       getTasks: () => tasks,

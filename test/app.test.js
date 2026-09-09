@@ -521,4 +521,35 @@ test("same title at a different time is treated as a different task", () => {
   assertEqual(app.api.liveTasks().length, 2, "a second round that day is a real task");
 });
 
+// --- version -----------------------------------------------------------------
+test("the version is shown in the header", () => {
+  const { api, elements } = loadApp(EVENING);
+  api.showAppVersion();
+  assertEqual(elements.get("#app-version").textContent, "v" + api.APP_VERSION);
+});
+
+test("app.js, the service worker and package.json agree on the version", () => {
+  const fs = require("fs");
+  const p = require("path");
+  const root = p.join(__dirname, "..");
+  const read = (f) => fs.readFileSync(p.join(root, f), "utf8");
+
+  const inApp = /const APP_VERSION = "([^"]+)"/.exec(read("app.js"));
+  const inWorker = /const APP_VERSION = '([^']+)'/.exec(read("service-worker.js"));
+  const inPackage = JSON.parse(read("package.json")).version;
+
+  assert(inApp, "app.js should declare APP_VERSION");
+  assert(inWorker, "service-worker.js should declare APP_VERSION");
+  assertEqual(inWorker[1], inApp[1],
+    "the service worker cache would not invalidate in step with the app");
+  assertEqual(inPackage, inApp[1], "package.json is out of step");
+});
+
+test("the cache name is derived from the version, not hardcoded", () => {
+  const worker = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "service-worker.js"), "utf8");
+  assert(/const CACHE_NAME = `medtodo-v\$\{APP_VERSION\}`/.test(worker),
+    "CACHE_NAME should interpolate APP_VERSION so one bump does both jobs");
+});
+
 report();

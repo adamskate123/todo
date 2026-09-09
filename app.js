@@ -1,3 +1,9 @@
+// Bump on every deploy. The service worker derives its cache name from the
+// same number, so one change both invalidates the cache and updates what the
+// header shows -- and because this string ships inside app.js, seeing it
+// change is proof the new file actually loaded rather than a cached one.
+const APP_VERSION = "2.1.0";
+
 const STORAGE_KEY = "todo.tasks";
 
 // --- Storage schema --------------------------------------------------------
@@ -64,6 +70,7 @@ const weekCount = document.querySelector("#week-count");
 
 // Season
 const seasonChip = document.querySelector("#season-chip");
+const appVersionLabel = document.querySelector("#app-version");
 
 // Undo toast
 const toast = document.querySelector("#toast");
@@ -1514,6 +1521,16 @@ function cycleSeason() {
 
 if (seasonChip) seasonChip.addEventListener("click", cycleSeason);
 applySeason();
+
+function showAppVersion() {
+  if (!appVersionLabel) return;
+  appVersionLabel.textContent = "v" + APP_VERSION;
+  appVersionLabel.title =
+    "Version " + APP_VERSION + ". If this has not changed after an update, "
+    + "reload the app to pick up the new version.";
+}
+
+showAppVersion();
 
 // Initial render
 setActiveView(activeView);

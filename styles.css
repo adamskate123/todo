@@ -1234,3 +1234,16 @@ body::before {
     padding: 6px 11px;
   }
 }
+
+/* Version label */
+.app-version {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
